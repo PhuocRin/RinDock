@@ -5,6 +5,7 @@
 #   ./build.sh dmg       → build + tạo file cài .dmg (kéo thả vào Applications)
 #   ./build.sh install   → build + chép vào /Applications + mở app
 set -euo pipefail
+export LC_ALL=en_US.UTF-8
 cd "$(dirname "$0")"
 
 if ! xcrun --find swiftc >/dev/null 2>&1; then
@@ -17,7 +18,7 @@ APP="build/RinDock.app"
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' Info.plist)"
 
 # ---------------------------------------------------------------- build app
-echo "→ Đang build RinDock $VERSION…"
+echo "→ Đang build RinDock ${VERSION}…"
 rm -rf build
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" build/obj
 
