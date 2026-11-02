@@ -334,6 +334,7 @@ final class SupportWindowController {
 
 // MARK: - Thanh menu
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private let clicker = DockClicker()
