@@ -45,14 +45,14 @@ Mẹo:
 
 **Bước 2:** Mở file `.dmg`, kéo icon **RinDock** sang thư mục **Applications** ngay bên cạnh. Kéo xong thì đẩy ổ RinDock ra (bấm nút ⏏ cạnh RinDock trong Finder).
 
-**Bước 3:** Mở RinDock. Vì app chưa đăng ký với Apple nên macOS sẽ chặn ở lần mở đầu. Cách mở:
+**Bước 3:** Mở RinDock. Vì app chưa được Apple công chứng nên macOS sẽ chặn ở lần mở đầu, hộp thoại chỉ có 2 nút. Cách mở:
 
-1. Bấm **Done** (hoặc **OK**) ở thông báo chặn.
-2. Vào **System Settings → Privacy & Security**, kéo xuống dưới cùng.
-3. Bấm **Open Anyway** cạnh dòng nói về RinDock, nhập mật khẩu máy.
-4. Mở lại RinDock, bấm **Open**.
+1. Bấm **Xong** (**Done**). ⚠️ **Đừng bấm Chuyển vào Thùng rác** (**Move to Trash**), bấm là app bị xoá.
+2. Mở **Cài đặt hệ thống → Quyền riêng tư & Bảo mật** (**System Settings → Privacy & Security**).
+3. Kéo xuống phần **Bảo mật** (**Security**), thấy dòng nói về RinDock thì bấm **Vẫn mở** (**Open Anyway**), nhập mật khẩu máy hoặc dùng Touch ID.
+4. Hộp thoại hiện lại thì bấm **Vẫn mở** (**Open Anyway**).
 
-Chỉ cần làm một lần.
+Chỉ cần làm một lần. Các bản cập nhật sau RinDock tự cài, không bị chặn nữa.
 
 **Bước 4:** Cấp quyền (xem phần [Cấp quyền](#cấp-quyền) bên dưới).
 
@@ -163,7 +163,7 @@ Không ủng hộ cũng không sao. Bấm ⭐ cho repo, hoặc chia sẻ RinDock
 
 **Requirements:** macOS 13 or later, Apple silicon or Intel.
 
-**Install (pre-built):** download `RinDock-x.x.dmg` from [Releases](../../releases/latest), open it, drag **RinDock** onto **Applications**, then open the app. The app isn't notarized, so the first launch is blocked: go to **System Settings → Privacy & Security**, click **Open Anyway**, then open it again.
+**Install (pre-built):** download `RinDock-x.x.dmg` from [Releases](../../releases/latest), open it, drag **RinDock** onto **Applications**, then open the app. The app isn't notarized, so the first launch is blocked: click **Done** (not **Move to Trash**), go to **System Settings → Privacy & Security**, scroll to **Security**, click **Open Anyway**, then confirm **Open Anyway** again.
 
 **Install (from source):**
 
