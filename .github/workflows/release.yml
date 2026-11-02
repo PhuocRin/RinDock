@@ -17,12 +17,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Đánh số build (mỗi lần build một số mới, để macOS đọc lại icon)
+        run: /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${{ github.run_number }}" Info.plist
+
       - name: Lấy số phiên bản từ tag
         if: github.event_name == 'release'
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" Info.plist
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${{ github.run_number }}" Info.plist
 
       - name: Build app và file .dmg
         run: |

@@ -19,6 +19,7 @@ VERSION="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' Info.pl
 
 # ---------------------------------------------------------------- build app
 echo "→ Đang build RinDock ${VERSION}…"
+xcrun swiftc --version 2>&1 | head -1
 rm -rf build
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" build/obj
 
@@ -35,6 +36,8 @@ lipo -create build/obj/RinDock-arm64 build/obj/RinDock-x86_64 -output "$APP/Cont
 cp Info.plist "$APP/Contents/Info.plist"
 # Icon app.
 iconutil -c icns assets/AppIcon.iconset -o "$APP/Contents/Resources/AppIcon.icns"
+# Icon thanh menu (đơn sắc, tự đổi theo nền sáng/tối).
+cp assets/menubar/MenuBarIcon*.png "$APP/Contents/Resources/"
 # Ảnh QR ủng hộ (nếu có) đóng gói vào app.
 if [[ -f assets/donate-qr.png ]]; then
   cp assets/donate-qr.png "$APP/Contents/Resources/donate-qr.png"

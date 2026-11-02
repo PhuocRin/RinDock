@@ -257,6 +257,7 @@ enum AppInfo {
     static let apiLatestRelease = URL(string: "https://api.github.com/repos/PhuocRin/RinDock/releases/latest")!
     static let youtubeURL = URL(string: "https://youtube.com/@phuocrin")!
     static let tiktokURL = URL(string: "https://www.tiktok.com/@phuocrinrin")!
+    static let facebookURL = URL(string: "https://www.facebook.com/phuocrinrin")!
     static let email = "phuocrinrin@gmail.com"
 
     static var macOS: String {
@@ -281,16 +282,130 @@ enum AppInfo {
     }
 }
 
-// MARK: - Cửa sổ kính dùng chung
+// MARK: - Liquid Glass dùng chung
+
+/// Nền cửa sổ: gradient xanh tím cùng tông icon app, để lớp kính có màu mà khúc xạ.
+struct PanelBackdrop: View {
+    var body: some View {
+        ZStack {
+            LinearGradient(colors: [Color(red: 0.36, green: 0.55, blue: 1.0),
+                                    Color(red: 0.48, green: 0.36, blue: 1.0),
+                                    Color(red: 0.69, green: 0.36, blue: 1.0)],
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
+            Circle()
+                .fill(Color(red: 0.45, green: 0.90, blue: 0.95).opacity(0.55))
+                .frame(width: 260, height: 260)
+                .blur(radius: 70)
+                .offset(x: 140, y: 260)
+            Circle()
+                .fill(Color(red: 1.0, green: 0.55, blue: 0.80).opacity(0.45))
+                .frame(width: 240, height: 240)
+                .blur(radius: 70)
+                .offset(x: -150, y: -200)
+        }
+        .ignoresSafeArea()
+    }
+}
 
 extension View {
+    /// Khung chung cho mọi cửa sổ: nền gradient, chữ sáng.
     func panelStyle(width: CGFloat = 340) -> some View {
         self
-            .padding(.horizontal, 28)
-            .padding(.top, 36)
-            .padding(.bottom, 24)
+            .padding(.horizontal, 26)
+            .padding(.top, 40)
+            .padding(.bottom, 26)
             .frame(width: width)
-            .background(.ultraThinMaterial)
+            .background { PanelBackdrop() }
+            .environment(\.colorScheme, .dark)
+    }
+
+    /// Khối nội dung mờ trong suốt (không phải kính, để nút kính đặt bên trong không bị kính chồng kính).
+    func softCard(cornerRadius: CGFloat = 18) -> some View {
+        self
+            .background {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(Color.white.opacity(0.14))
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.28), lineWidth: 1)
+            }
+    }
+
+    /// Nút Liquid Glass thật trên macOS 26, nút thường ở bản thấp hơn.
+    func glassButton(prominent: Bool = false) -> some View {
+        modifier(GlassButton(prominent: prominent))
+    }
+
+    /// Chữ ghi chú nhỏ trên nền gradient.
+    func noteText() -> some View {
+        self
+            .font(.system(size: 11))
+            .foregroundStyle(Color.white.opacity(0.78))
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+struct GlassButton: ViewModifier {
+    let prominent: Bool
+    private let deep = Color(red: 0.16, green: 0.12, blue: 0.48)
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        #if compiler(>=6.2)
+        if #available(macOS 26.0, *) {
+            if prominent {
+                content.buttonStyle(.glassProminent).tint(deep)
+            } else {
+                content.buttonStyle(.glass)
+            }
+        } else {
+            fallback(content)
+        }
+        #else
+        fallback(content)
+        #endif
+    }
+
+    @ViewBuilder
+    private func fallback(_ content: Content) -> some View {
+        if prominent {
+            content.buttonStyle(.borderedProminent).tint(deep)
+        } else {
+            content.buttonStyle(.bordered)
+        }
+    }
+}
+
+/// Gom các nút kính đứng gần nhau vào một GlassEffectContainer (macOS 26).
+struct GlassGroup<Content: View>: View {
+    var spacing: CGFloat = 10
+    @ViewBuilder var content: Content
+
+    @ViewBuilder
+    var body: some View {
+        #if compiler(>=6.2)
+        if #available(macOS 26.0, *) {
+            GlassEffectContainer(spacing: spacing) { content }
+        } else {
+            content
+        }
+        #else
+        content
+        #endif
+    }
+}
+
+struct AppIconView: View {
+    var size: CGFloat = 88
+    @ViewBuilder
+    var body: some View {
+        if let icon = NSImage(named: NSImage.applicationIconName) {
+            Image(nsImage: icon)
+                .resizable()
+                .frame(width: size, height: size)
+                .shadow(color: Color.black.opacity(0.25), radius: 14, y: 6)
+        }
     }
 }
 
@@ -316,6 +431,9 @@ final class Panel {
             w.titleVisibility = .hidden
             w.isMovableByWindowBackground = true
             w.isReleasedWhenClosed = false
+            w.appearance = NSAppearance(named: .darkAqua)
+            w.standardWindowButton(.miniaturizeButton)?.isHidden = true
+            w.standardWindowButton(.zoomButton)?.isHidden = true
             window = w
         }
         if let w = window, !w.isVisible { w.center() }
@@ -333,62 +451,73 @@ enum Support {
 }
 
 struct SupportView: View {
+    private let qr = Support.qrImage
+
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 14) {
             Image(systemName: "heart.fill")
                 .font(.system(size: 34, weight: .semibold))
-                .foregroundStyle(
-                    LinearGradient(colors: [.pink, .purple], startPoint: .topLeading, endPoint: .bottomTrailing)
-                )
-                .padding(.top, 8)
+                .foregroundStyle(.white)
+                .shadow(color: Color.pink.opacity(0.6), radius: 12)
 
             Text("Ủng hộ tác giả")
                 .font(.system(size: 22, weight: .bold, design: .rounded))
 
-            Text("RinDock miễn phí. Nếu app giúp ích cho bạn, bạn có thể ủng hộ Phước Rin để mình có thêm động lực làm app và video.")
+            Text(qr != nil
+                 ? "RinDock miễn phí. Nếu app giúp ích cho bạn, bạn có thể ủng hộ Phước Rin bằng 1 trong 2 cách bên dưới."
+                 : "RinDock miễn phí. Nếu app giúp ích cho bạn, bạn có thể ủng hộ Phước Rin qua PayPal.")
                 .font(.system(size: 13))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
 
-            if let qr = Support.qrImage {
-                VStack(spacing: 8) {
+            if let qr {
+                VStack(alignment: .leading, spacing: 10) {
+                    Label("Cách 1 · Chuyển khoản ngân hàng", systemImage: "building.columns.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text("Dành cho bạn ở Việt Nam. Mở app ngân hàng bất kỳ, quét mã này.")
+                        .noteText()
                     Image(nsImage: qr)
                         .resizable()
                         .interpolation(.high)
                         .scaledToFit()
-                        .frame(width: 200, height: 200)
-                        .padding(12)
-                        .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(.white))
-                        .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
-                    Text("Quét bằng app ngân hàng")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.secondary)
+                        .frame(width: 176, height: 176)
+                        .padding(10)
+                        .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(.white))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 2)
                     Text("App ngân hàng sẽ hiện tên chủ tài khoản, bạn kiểm tra đúng tên trước khi chuyển nha.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.tertiary)
-                        .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .noteText()
                 }
-                .padding(.vertical, 4)
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .softCard()
             }
 
-            Button {
-                NSWorkspace.shared.open(Support.paypalURL)
-            } label: {
-                Label("Ủng hộ qua PayPal", systemImage: "creditcard")
+            VStack(alignment: .leading, spacing: 10) {
+                Label(qr != nil ? "Cách 2 · PayPal" : "PayPal", systemImage: "globe")
                     .font(.system(size: 13, weight: .semibold))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 6)
+                Text("Dành cho bạn ở nước ngoài hoặc có tài khoản PayPal.")
+                    .noteText()
+                Button {
+                    NSWorkspace.shared.open(Support.paypalURL)
+                } label: {
+                    Label("Ủng hộ qua PayPal", systemImage: "arrow.up.right")
+                        .font(.system(size: 13, weight: .semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 4)
+                }
+                .glassButton(prominent: true)
+                .controlSize(.large)
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .softCard()
 
             Text("Cảm ơn bạn đã dùng RinDock 💙")
-                .font(.system(size: 11))
-                .foregroundStyle(.tertiary)
+                .noteText()
         }
-        .panelStyle()
+        .panelStyle(width: 360)
     }
 }
 
@@ -397,14 +526,10 @@ struct SupportView: View {
 struct AboutView: View {
     var body: some View {
         VStack(spacing: 12) {
-            if let icon = NSImage(named: NSImage.applicationIconName) {
-                Image(nsImage: icon)
-                    .resizable()
-                    .frame(width: 96, height: 96)
-            }
+            AppIconView(size: 96)
 
             Text("RinDock")
-                .font(.system(size: 24, weight: .bold, design: .rounded))
+                .font(.system(size: 26, weight: .bold, design: .rounded))
 
             Text("Phiên bản \(AppInfo.version)")
                 .font(.system(size: 12, weight: .medium))
@@ -416,21 +541,31 @@ struct AboutView: View {
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Divider().padding(.vertical, 4)
+            VStack(spacing: 12) {
+                Text("Làm bởi Phước Rin")
+                    .font(.system(size: 13, weight: .semibold))
 
-            Text("Làm bởi Phước Rin")
-                .font(.system(size: 13, weight: .semibold))
-
-            HStack(spacing: 8) {
-                link("YouTube", "play.rectangle.fill", AppInfo.youtubeURL)
-                link("TikTok", "music.note", AppInfo.tiktokURL)
-                link("GitHub", "chevron.left.forwardslash.chevron.right", AppInfo.repoURL)
+                GlassGroup(spacing: 10) {
+                    Grid(horizontalSpacing: 10, verticalSpacing: 10) {
+                        GridRow {
+                            link("YouTube", "play.rectangle.fill", AppInfo.youtubeURL)
+                            link("Facebook", "f.square.fill", AppInfo.facebookURL)
+                        }
+                        GridRow {
+                            link("TikTok", "music.note", AppInfo.tiktokURL)
+                            link("GitHub", "chevron.left.forwardslash.chevron.right", AppInfo.repoURL)
+                        }
+                    }
+                }
             }
+            .padding(16)
+            .frame(maxWidth: .infinity)
+            .softCard()
+            .padding(.top, 6)
 
             Text("Miễn phí · Mã nguồn mở (MIT)")
-                .font(.system(size: 11))
-                .foregroundStyle(.tertiary)
-                .padding(.top, 4)
+                .noteText()
+                .padding(.top, 2)
         }
         .panelStyle()
     }
@@ -441,8 +576,10 @@ struct AboutView: View {
         } label: {
             Label(title, systemImage: symbol)
                 .font(.system(size: 12, weight: .medium))
+                .frame(maxWidth: .infinity)
         }
-        .buttonStyle(.bordered)
+        .glassButton()
+        .controlSize(.large)
     }
 }
 
@@ -485,10 +622,8 @@ struct BugReportView: View {
         VStack(spacing: 14) {
             Image(systemName: "ladybug.fill")
                 .font(.system(size: 32, weight: .semibold))
-                .foregroundStyle(
-                    LinearGradient(colors: [.orange, .red], startPoint: .topLeading, endPoint: .bottomTrailing)
-                )
-                .padding(.top, 8)
+                .foregroundStyle(.white)
+                .shadow(color: Color.orange.opacity(0.6), radius: 12)
 
             Text("Báo lỗi")
                 .font(.system(size: 22, weight: .bold, design: .rounded))
@@ -502,45 +637,53 @@ struct BugReportView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Thông tin gửi kèm")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
                 Text(info)
                     .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(Color.white.opacity(0.85))
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
+                Text("Chỉ gồm phiên bản app, macOS và loại chip. Không có thông tin cá nhân.")
+                    .noteText()
+                    .padding(.top, 2)
             }
+            .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(12)
-            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.primary.opacity(0.06)))
+            .softCard(cornerRadius: 16)
 
-            Text("Chỉ gồm phiên bản app, macOS và loại chip. Không có thông tin cá nhân.")
-                .font(.system(size: 11))
-                .foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
+            GlassGroup(spacing: 10) {
+                VStack(spacing: 10) {
+                    Button {
+                        if let url = BugReport.emailURL { NSWorkspace.shared.open(url) }
+                    } label: {
+                        Label("Gửi qua email", systemImage: "envelope.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 4)
+                    }
+                    .glassButton(prominent: true)
+                    .controlSize(.large)
 
-            Button {
-                if let url = BugReport.emailURL { NSWorkspace.shared.open(url) }
-            } label: {
-                Label("Gửi qua email", systemImage: "envelope.fill")
-                    .font(.system(size: 13, weight: .semibold))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 6)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
+                    HStack(spacing: 10) {
+                        Button {
+                            if let url = BugReport.githubURL { NSWorkspace.shared.open(url) }
+                        } label: {
+                            Text("Báo trên GitHub").frame(maxWidth: .infinity)
+                        }
+                        .glassButton()
 
-            HStack(spacing: 8) {
-                Button("Báo trên GitHub") {
-                    if let url = BugReport.githubURL { NSWorkspace.shared.open(url) }
+                        Button {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(info, forType: .string)
+                            copied = true
+                        } label: {
+                            Text(copied ? "Đã sao chép" : "Sao chép thông tin").frame(maxWidth: .infinity)
+                        }
+                        .glassButton()
+                    }
+                    .font(.system(size: 12))
+                    .controlSize(.large)
                 }
-                Button(copied ? "Đã sao chép" : "Sao chép thông tin") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(info, forType: .string)
-                    copied = true
-                }
             }
-            .buttonStyle(.bordered)
-            .font(.system(size: 12))
         }
         .panelStyle()
     }
@@ -621,11 +764,7 @@ struct UpdateView: View {
 
     var body: some View {
         VStack(spacing: 14) {
-            if let icon = NSImage(named: NSImage.applicationIconName) {
-                Image(nsImage: icon)
-                    .resizable()
-                    .frame(width: 72, height: 72)
-            }
+            AppIconView(size: 76)
 
             switch updater.state {
             case .idle, .checking:
@@ -637,23 +776,24 @@ struct UpdateView: View {
 
             case .upToDate:
                 Text("Bạn đang dùng bản mới nhất")
-                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .font(.system(size: 19, weight: .bold, design: .rounded))
                 Text("RinDock \(AppInfo.version)")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
 
             case .failed:
                 Text("Chưa kiểm tra được")
-                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .font(.system(size: 19, weight: .bold, design: .rounded))
                 Text("Bạn kiểm tra kết nối mạng rồi thử lại nha.")
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
                 Button("Thử lại") { updater.check() }
-                    .buttonStyle(.bordered)
+                    .glassButton()
+                    .controlSize(.large)
 
             case let .available(version, url, notes):
                 Text("Có bản mới RinDock \(version)")
-                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .font(.system(size: 19, weight: .bold, design: .rounded))
                 Text("Bạn đang dùng bản \(AppInfo.version)")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
@@ -666,8 +806,8 @@ struct UpdateView: View {
                             .textSelection(.enabled)
                     }
                     .frame(maxHeight: 150)
-                    .padding(12)
-                    .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.primary.opacity(0.06)))
+                    .padding(14)
+                    .softCard(cornerRadius: 16)
                 }
 
                 Button {
@@ -676,27 +816,27 @@ struct UpdateView: View {
                     Label("Tải bản mới", systemImage: "arrow.down.circle.fill")
                         .font(.system(size: 13, weight: .semibold))
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 6)
+                        .padding(.vertical, 4)
                 }
-                .buttonStyle(.borderedProminent)
+                .glassButton(prominent: true)
                 .controlSize(.large)
 
                 Text("Tải file .dmg, mở ra và kéo RinDock vào Applications để thay bản cũ.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.tertiary)
+                    .noteText()
                     .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
             }
 
-            Divider().padding(.vertical, 2)
-
-            Toggle("Tự kiểm tra cập nhật mỗi ngày", isOn: $autoUpdate)
-                .font(.system(size: 12))
-            Text("RinDock chỉ hỏi GitHub có bản mới không, không gửi thông tin gì của bạn.")
-                .font(.system(size: 11))
-                .foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
+            VStack(spacing: 6) {
+                Toggle("Tự kiểm tra cập nhật mỗi ngày", isOn: $autoUpdate)
+                    .font(.system(size: 12, weight: .medium))
+                Text("RinDock chỉ hỏi GitHub có bản mới không, không gửi thông tin gì của bạn.")
+                    .noteText()
+                    .multilineTextAlignment(.center)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity)
+            .softCard(cornerRadius: 16)
+            .padding(.top, 4)
         }
         .panelStyle()
     }
@@ -817,10 +957,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func updateIcon() {
         let hasUpdate = updater.available != nil
-        let symbol = hasUpdate ? "dock.arrow.down.rectangle" : "dock.rectangle"
-        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "RinDock")
-            ?? NSImage(systemSymbolName: "rectangle.bottomthird.inset.filled", accessibilityDescription: "RinDock")
+        let name = hasUpdate ? "MenuBarIconUpdate" : "MenuBarIcon"
+        let image = Bundle.main.image(forResource: name)
+            ?? NSImage(systemSymbolName: hasUpdate ? "dock.arrow.down.rectangle" : "dock.rectangle",
+                       accessibilityDescription: "RinDock")
+        image?.size = NSSize(width: 18, height: 18)
         image?.isTemplate = true
+        image?.accessibilityDescription = "RinDock"
         statusItem.button?.image = image
         if let a = updater.available {
             statusItem.button?.toolTip = "RinDock: có bản mới \(a.version)"
