@@ -84,13 +84,18 @@ App sẽ được chép vào **Applications** và tự mở lên.
 
 ## Cấp quyền
 
-Lần đầu mở, RinDock hiện cửa sổ **Chào mừng** hướng dẫn từng bước: bấm **Mở cài đặt Accessibility**, bật công tắc cạnh RinDock là xong (cửa sổ tự hiện dấu ✓). Mở lại hướng dẫn bất cứ lúc nào: icon RinDock → **Hướng dẫn sử dụng**.
+Lần đầu mở, RinDock hiện cửa sổ **Chào mừng** hướng dẫn từng bước: bấm **Mở cài đặt quyền**, bật công tắc cạnh RinDock là xong (cửa sổ tự hiện dấu ✓). Mở lại hướng dẫn bất cứ lúc nào: icon RinDock → **Hướng dẫn sử dụng**.
 
-RinDock cần quyền **Accessibility** để biết bạn bấm icon nào trên Dock và thu nhỏ cửa sổ.
+RinDock cần quyền điều khiển máy để biết bạn bấm icon nào trên Dock và thu nhỏ cửa sổ. Tên mục quyền khác nhau tuỳ bản macOS:
 
-1. Lần đầu mở app, macOS sẽ hỏi. Bấm **Open System Settings**.
-2. Vào **System Settings → Privacy & Security → Accessibility**.
-3. Bật công tắc cạnh **RinDock**.
+| Bản macOS | Đường dẫn |
+|---|---|
+| **macOS 27 trở lên** | Cài đặt hệ thống → Quyền riêng tư & Bảo mật → **Điều khiển thiết bị và truy cập dữ liệu** (Device Control and Data Access) |
+| **macOS 26 trở về trước** | Cài đặt hệ thống → Quyền riêng tư & Bảo mật → **Trợ năng** (Accessibility) |
+
+Vào đúng mục theo bản macOS của bạn, rồi bật công tắc cạnh **RinDock**. Không biết máy đang chạy bản nào: Apple menu  → **Giới thiệu về máy Mac này** (About This Mac).
+
+Trong README này, "mục quyền" là mục ở bảng trên.
 
 Icon RinDock trên thanh menu sáng lên là đã chạy.
 
@@ -112,7 +117,7 @@ Muốn kiểm tra ngay: bấm icon RinDock → **Kiểm tra cập nhật…**.
 Lưu ý:
 - Tự cập nhật chỉ chạy khi RinDock nằm trong thư mục **Applications**.
 - Mọi bản cập nhật đều được ký số. RinDock kiểm tra chữ ký trước khi cài, sai chữ ký là không cài.
-- Bản cập nhật giữ nguyên quyền Accessibility, bạn không phải cấp lại.
+- Bản cập nhật giữ nguyên quyền của RinDock, bạn không phải cấp lại.
 
 ## Giao diện kính
 
@@ -127,7 +132,7 @@ RinDock có tiếng Việt và tiếng Anh. Đổi ở: icon RinDock trên thanh
 ## RinDock có an toàn không?
 
 - RinDock **không** chụp màn hình, **không** ghi lại thao tác bàn phím.
-- Quyền Accessibility chỉ dùng để đọc icon Dock dưới con trỏ và thu nhỏ / hiện cửa sổ.
+- Quyền điều khiển (mục Trợ năng, hoặc Điều khiển thiết bị và truy cập dữ liệu trên macOS 27) chỉ dùng để đọc icon Dock dưới con trỏ và thu nhỏ / hiện cửa sổ.
 - Kết nối mạng duy nhất: hỏi GitHub có bản mới không (mỗi ngày, mỗi tuần, hoặc tắt), và tải bản mới khi cập nhật. Không gửi thông tin gì của bạn.
 - Bản cập nhật được ký số; RinDock chỉ cài khi chữ ký đúng là của tác giả.
 - Khi bạn bấm **Báo lỗi**, app chỉ mở email hoặc GitHub có điền sẵn phiên bản app, macOS, loại chip và nhật ký 30 lần bấm Dock gần nhất (tên app được bấm, chỉ lưu trong bộ nhớ, thoát app là mất). Bạn xem được hết trước khi gửi, không gửi thì không có gì đi đâu cả.
@@ -138,7 +143,7 @@ RinDock có tiếng Việt và tiếng Anh. Đổi ở: icon RinDock trên thanh
 Bấm icon RinDock trên thanh menu → **Báo lỗi…** → chọn **Gửi qua email** hoặc **Báo trên GitHub**. Mô tả lỗi giúp mình nha.
 
 **RinDock không làm gì khi bấm Dock**
-Vào **System Settings → Privacy & Security → Accessibility**, chọn RinDock, bấm nút **−** để xoá, rồi mở lại RinDock và cấp quyền lại. Hay gặp khi chuyển từ bản thử cũ sang bản mới.
+Vào mục quyền (xem bảng ở phần [Cấp quyền](#cấp-quyền)), chọn RinDock, bấm nút **−** để xoá, rồi mở lại RinDock và cấp quyền lại. Hay gặp khi chuyển từ bản thử cũ sang bản mới.
 
 **Một app nào đó không thu nhỏ được**
 Một số app khai báo cửa sổ theo kiểu riêng nên RinDock không nhận ra. Hãy mở [Issue](../../issues) kèm tên app.
@@ -147,7 +152,7 @@ Một số app khai báo cửa sổ theo kiểu riêng nên RinDock không nhậ
 
 1. Bấm icon RinDock trên thanh menu → **Thoát RinDock**.
 2. Xoá **RinDock.app** trong **Applications**.
-3. Vào **System Settings → Privacy & Security → Accessibility**, xoá RinDock khỏi danh sách.
+3. Vào mục quyền (xem bảng ở phần [Cấp quyền](#cấp-quyền)), xoá RinDock khỏi danh sách.
 
 ---
 
@@ -178,7 +183,7 @@ cd RinDock
 ./build.sh install
 ```
 
-**Permission:** grant Accessibility in **System Settings → Privacy & Security → Accessibility**. RinDock uses it only to detect Dock clicks and minimize or restore windows. No screen recording, no keylogging. Network use: checking GitHub for a new version (daily, weekly or off) and downloading it when updating; nothing about you is sent.
+**Permission:** follow the Welcome window, or turn RinDock on in **System Settings → Privacy & Security → Device Control and Data Access** (macOS 27 and later) or **→ Accessibility** (macOS 26 and earlier). RinDock uses it only to detect Dock clicks and minimize or restore windows. No screen recording, no keylogging. Network use: checking GitHub for a new version (daily, weekly or off) and downloading it when updating; nothing about you is sent.
 
 **Language:** menu bar icon → **Ngôn ngữ · Language** → **English**. All menus and windows switch to English.
 

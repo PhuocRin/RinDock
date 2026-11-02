@@ -628,13 +628,40 @@ enum AppInfo {
         return String(cString: buf)
     }
 
+    /// macOS 27 đổi tên mục "Trợ năng" (Accessibility) trong Quyền riêng tư & Bảo mật
+    /// thành "Điều khiển thiết bị và truy cập dữ liệu" (Device Control and Data Access).
+    static var isMacOS27OrLater: Bool {
+        ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27
+    }
+
+    /// Tên mục quyền đúng với bản macOS đang chạy.
+    static var permissionName: String {
+        isMacOS27OrLater
+            ? L("Điều khiển thiết bị và truy cập dữ liệu", "Device Control and Data Access")
+            : L("Trợ năng", "Accessibility")
+    }
+
+    /// Đường dẫn tới mục quyền, đúng với bản macOS đang chạy.
+    static var permissionPath: String {
+        L("Cài đặt hệ thống → Quyền riêng tư & Bảo mật → ", "System Settings → Privacy & Security → ") + permissionName
+    }
+
+    /// Mở thẳng mục quyền; nếu macOS không mở được thì mở trang Quyền riêng tư & Bảo mật.
+    static func openPermissionSettings() {
+        let direct = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
+        let fallback = URL(string: "x-apple.systempreferences:com.apple.preference.security")!
+        if !NSWorkspace.shared.open(direct) {
+            NSWorkspace.shared.open(fallback)
+        }
+    }
+
     /// Thông tin gửi kèm khi báo lỗi. Không có gì cá nhân.
     static var diagnostics: String {
         "RinDock \(version) · \(macOS) · \(chip)\n"
             + L("Chế độ", "Mode") + ": \(Prefs.mode.title) · " + L("Tuỳ chỉnh theo app", "Per-app") + ": \(Prefs.appRules.count) · "
             + L("Chuột giữa", "Middle-click") + ": \(Prefs.middleClick.rawValue)\n"
             + L("Đang bật", "Enabled") + ": \(Prefs.enabled ? L("Có", "Yes") : L("Không", "No")) · "
-            + L("Quyền Accessibility", "Accessibility permission") + ": \(AXIsProcessTrusted() ? L("Có", "Yes") : L("Chưa", "Not yet"))"
+            + L("Đã cấp quyền", "Permission granted") + ": \(AXIsProcessTrusted() ? L("Có", "Yes") : L("Chưa", "Not yet"))"
     }
 }
 
@@ -1400,10 +1427,13 @@ struct OnboardingView: View {
 
             // Bước 1: quyền
             VStack(alignment: .leading, spacing: 10) {
-                stepHeader(1, L("Cấp quyền Accessibility", "Allow Accessibility"), done: trusted)
+                stepHeader(1, L("Cấp quyền cho RinDock", "Give RinDock permission"), done: trusted)
                 Text(L("RinDock cần quyền này để biết bạn bấm icon nào trên Dock và thu nhỏ cửa sổ. Không chụp màn hình, không ghi phím.",
                        "RinDock needs this to see which Dock icon you click and minimize windows. No screen recording, no keylogging."))
                     .noteText()
+                Text(AppInfo.permissionPath)
+                    .font(.system(size: 12, weight: .semibold))
+                    .fixedSize(horizontal: false, vertical: true)
                 if trusted {
                     Label(L("Đã cấp quyền", "Permission granted"), systemImage: "checkmark.circle.fill")
                         .font(.system(size: 13, weight: .semibold))
@@ -1415,11 +1445,9 @@ struct OnboardingView: View {
                     Button {
                         let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
                         _ = AXIsProcessTrustedWithOptions([key: true] as CFDictionary)
-                        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-                            NSWorkspace.shared.open(url)
-                        }
+                        AppInfo.openPermissionSettings()
                     } label: {
-                        Label(L("Mở cài đặt Accessibility", "Open Accessibility settings"), systemImage: "lock.open.fill")
+                        Label(L("Mở cài đặt quyền", "Open permission settings"), systemImage: "lock.open.fill")
                             .font(.system(size: 13, weight: .semibold))
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 4)
@@ -1928,8 +1956,8 @@ struct UpdateView: View {
             }
         }
         if UpdateSecurity.currentIsAdHoc && rel.canAutoInstall {
-            Text(L("Lần cập nhật này bạn sẽ phải cấp lại quyền Accessibility một lần. Từ bản sau thì không cần nữa.",
-                   "After this update you'll need to grant Accessibility permission once more. Future updates won't need it."))
+            Text(L("Lần cập nhật này bạn sẽ phải cấp lại quyền (\(AppInfo.permissionName)) một lần. Từ bản sau thì không cần nữa.",
+                   "After this update you'll need to grant permission (\(AppInfo.permissionName)) once more. Future updates won't need it."))
                 .noteText()
                 .multilineTextAlignment(.center)
         }
@@ -2106,7 +2134,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if AXIsProcessTrusted() {
             menu.addItem(label(Prefs.enabled ? L("RinDock đang chạy", "RinDock is running") : L("RinDock đang tắt", "RinDock is off")))
         } else {
-            menu.addItem(item(L("⚠️ Cần cấp quyền Accessibility…", "⚠️ Accessibility permission needed…"), #selector(openOnboarding)))
+            menu.addItem(item(L("⚠️ Cần cấp quyền cho RinDock…", "⚠️ RinDock needs permission…"), #selector(openOnboarding)))
         }
         menu.addItem(.separator())
 
@@ -2232,7 +2260,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func openAccessibility() {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+        AppInfo.openPermissionSettings()
+        if false, let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
             NSWorkspace.shared.open(url)
         }
     }
