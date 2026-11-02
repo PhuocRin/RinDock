@@ -110,6 +110,17 @@ Một số app khai báo cửa sổ theo kiểu riêng nên RinDock không nhậ
 
 ---
 
+## Ủng hộ tác giả
+
+RinDock miễn phí và sẽ luôn miễn phí. Nếu app giúp bạn dùng Mac thoải mái hơn và bạn muốn mời mình ly cà phê:
+
+- ☕ [phuocrin.com](https://phuocrin.com): mục mời cà phê có mã QR ủng hộ
+- 💙 [PayPal.me/phuocrin](https://paypal.me/phuocrin)
+
+Không ủng hộ cũng không sao. Bấm ⭐ cho repo, hoặc chia sẻ RinDock cho bạn bè dùng Mac là mình vui rồi.
+
+---
+
 ## English
 
 **RinDock** makes the macOS Dock behave like the Windows taskbar: click the icon of the app you're using to minimize it, click again to bring all its windows back. Free, open source, lives in the menu bar.
@@ -130,6 +141,8 @@ cd RinDock
 **Permission:** grant Accessibility in **System Settings → Privacy & Security → Accessibility**. RinDock uses it only to detect Dock clicks and minimize or restore windows. No screen recording, no keylogging, no network.
 
 **Modes (menu bar):** minimize all windows (default), minimize the focused window, or hide the app. Hold ⌘, ⌥, ⌃ or ⇧ while clicking to get the normal Dock behavior.
+
+**Support:** RinDock is free. If you'd like to buy me a coffee: [PayPal.me/phuocrin](https://paypal.me/phuocrin). A ⭐ on the repo helps too.
 
 ---
 

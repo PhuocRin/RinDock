@@ -303,6 +303,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(login)
         menu.addItem(.separator())
 
+        menu.addItem(item("☕ Mời Phước Rin ly cà phê", #selector(openSupport)))
+        menu.addItem(.separator())
+
         menu.addItem(item("Thoát RinDock", #selector(quit)))
     }
 
@@ -350,6 +353,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             alert.informativeText = "Ní thêm tay: System Settings → General → Login Items → bấm + → chọn RinDock.\n\n(\(error.localizedDescription))"
             NSApp.activate(ignoringOtherApps: true)
             alert.runModal()
+        }
+    }
+
+    @objc private func openSupport() {
+        if let url = URL(string: "https://phuocrin.com") {
+            NSWorkspace.shared.open(url)
         }
     }
 
