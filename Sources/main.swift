@@ -13,11 +13,41 @@ enum ClickMode: String, CaseIterable {
 
     var title: String {
         switch self {
-        case .minimizeAll:     return "Thu nhỏ tất cả cửa sổ của app"
-        case .minimizeFocused: return "Chỉ thu nhỏ cửa sổ đang dùng"
-        case .hide:            return "Ẩn app (nhanh, không hiệu ứng)"
+        case .minimizeAll:     return L("Thu nhỏ tất cả cửa sổ của app", "Minimize all of the app's windows")
+        case .minimizeFocused: return L("Chỉ thu nhỏ cửa sổ đang dùng", "Minimize only the active window")
+        case .hide:            return L("Ẩn app (nhanh, không hiệu ứng)", "Hide the app (fast, no animation)")
         }
     }
+}
+
+// MARK: - Ngôn ngữ
+
+enum AppLanguage: String, CaseIterable {
+    case system, vi, en
+
+    var title: String {
+        switch self {
+        case .system: return L("Theo ngôn ngữ của máy", "Same as system")
+        case .vi:     return "Tiếng Việt"
+        case .en:     return "English"
+        }
+    }
+
+    /// Ngôn ngữ thực sự dùng (Theo máy → tiếng Việt nếu máy để tiếng Việt, còn lại tiếng Anh).
+    static var resolved: AppLanguage {
+        switch Prefs.language {
+        case .vi: return .vi
+        case .en: return .en
+        case .system:
+            let first = Locale.preferredLanguages.first ?? "en"
+            return first.hasPrefix("vi") ? .vi : .en
+        }
+    }
+}
+
+/// Chọn chữ theo ngôn ngữ đang dùng.
+func L(_ vi: String, _ en: String) -> String {
+    AppLanguage.resolved == .vi ? vi : en
 }
 
 enum UpdateFrequency: String, CaseIterable {
@@ -25,9 +55,9 @@ enum UpdateFrequency: String, CaseIterable {
 
     var title: String {
         switch self {
-        case .daily:  return "Mỗi ngày"
-        case .weekly: return "Mỗi tuần"
-        case .off:    return "Tắt"
+        case .daily:  return L("Mỗi ngày", "Daily")
+        case .weekly: return L("Mỗi tuần", "Weekly")
+        case .off:    return L("Tắt", "Off")
         }
     }
 
@@ -55,6 +85,11 @@ enum Prefs {
     }
 
     /// Tần suất tự hỏi GitHub có bản mới không. Mặc định mỗi ngày.
+    static var language: AppLanguage {
+        get { AppLanguage(rawValue: d.string(forKey: "language") ?? "") ?? .system }
+        set { d.set(newValue.rawValue, forKey: "language") }
+    }
+
     static var updateFrequency: UpdateFrequency {
         get { UpdateFrequency(rawValue: d.string(forKey: "updateFrequency") ?? "") ?? .daily }
         set { d.set(newValue.rawValue, forKey: "updateFrequency") }
@@ -307,8 +342,9 @@ enum AppInfo {
     /// Thông tin gửi kèm khi báo lỗi. Không có gì cá nhân.
     static var diagnostics: String {
         "RinDock \(version) · \(macOS) · \(chip)\n"
-            + "Chế độ: \(Prefs.mode.title)\n"
-            + "Đang bật: \(Prefs.enabled ? "Có" : "Không") · Quyền Accessibility: \(AXIsProcessTrusted() ? "Có" : "Chưa")"
+            + L("Chế độ", "Mode") + ": \(Prefs.mode.title)\n"
+            + L("Đang bật", "Enabled") + ": \(Prefs.enabled ? L("Có", "Yes") : L("Không", "No")) · "
+            + L("Quyền Accessibility", "Accessibility permission") + ": \(AXIsProcessTrusted() ? L("Có", "Yes") : L("Chưa", "Not yet"))"
     }
 }
 
@@ -448,6 +484,10 @@ final class Panel {
         self.content = content
     }
 
+    func reloadIfVisible() {
+        if window?.isVisible == true { show() }
+    }
+
     func show() {
         let controller = NSHostingController(rootView: content())
         controller.sizingOptions = .preferredContentSize   // cửa sổ tự co giãn theo nội dung
@@ -490,12 +530,14 @@ struct SupportView: View {
                 .foregroundStyle(.white)
                 .shadow(color: Color.pink.opacity(0.6), radius: 12)
 
-            Text("Ủng hộ tác giả")
+            Text(L("Ủng hộ tác giả", "Support the author"))
                 .font(.system(size: 22, weight: .bold, design: .rounded))
 
             Text(qr != nil
-                 ? "RinDock miễn phí. Nếu app giúp ích cho bạn, bạn có thể ủng hộ Phước Rin bằng 1 trong 2 cách bên dưới."
-                 : "RinDock miễn phí. Nếu app giúp ích cho bạn, bạn có thể ủng hộ Phước Rin qua PayPal.")
+                 ? L("RinDock miễn phí. Nếu app giúp ích cho bạn, bạn có thể ủng hộ Phước Rin bằng 1 trong 2 cách bên dưới.",
+                     "RinDock is free. If it helps you, you can support Phước Rin in one of the two ways below.")
+                 : L("RinDock miễn phí. Nếu app giúp ích cho bạn, bạn có thể ủng hộ Phước Rin qua PayPal.",
+                     "RinDock is free. If it helps you, you can support Phước Rin via PayPal."))
                 .font(.system(size: 13))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -503,9 +545,9 @@ struct SupportView: View {
 
             if let qr {
                 VStack(alignment: .leading, spacing: 10) {
-                    Label("Cách 1 · Chuyển khoản ngân hàng", systemImage: "building.columns.fill")
+                    Label(L("Cách 1 · Chuyển khoản ngân hàng", "Option 1 · Bank transfer (Vietnam)"), systemImage: "building.columns.fill")
                         .font(.system(size: 13, weight: .semibold))
-                    Text("Dành cho bạn ở Việt Nam. Mở app ngân hàng bất kỳ, quét mã này.")
+                    Text(L("Dành cho bạn ở Việt Nam. Mở app ngân hàng bất kỳ, quét mã này.", "For users in Vietnam. Open any banking app and scan this code."))
                         .noteText()
                     Image(nsImage: qr)
                         .resizable()
@@ -516,7 +558,7 @@ struct SupportView: View {
                         .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(.white))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 2)
-                    Text("App ngân hàng sẽ hiện tên chủ tài khoản, bạn kiểm tra đúng tên trước khi chuyển nha.")
+                    Text(L("App ngân hàng sẽ hiện tên chủ tài khoản, bạn kiểm tra đúng tên trước khi chuyển nha.", "Your banking app will show the account holder's name. Please check it before sending."))
                         .noteText()
                 }
                 .padding(16)
@@ -525,14 +567,14 @@ struct SupportView: View {
             }
 
             VStack(alignment: .leading, spacing: 10) {
-                Label(qr != nil ? "Cách 2 · PayPal" : "PayPal", systemImage: "globe")
+                Label(qr != nil ? L("Cách 2 · PayPal", "Option 2 · PayPal") : "PayPal", systemImage: "globe")
                     .font(.system(size: 13, weight: .semibold))
-                Text("Dành cho bạn ở nước ngoài hoặc có tài khoản PayPal.")
+                Text(L("Dành cho bạn ở nước ngoài hoặc có tài khoản PayPal.", "For users outside Vietnam, or anyone with a PayPal account."))
                     .noteText()
                 Button {
                     NSWorkspace.shared.open(Support.paypalURL)
                 } label: {
-                    Label("Ủng hộ qua PayPal", systemImage: "arrow.up.right")
+                    Label(L("Ủng hộ qua PayPal", "Support via PayPal"), systemImage: "arrow.up.right")
                         .font(.system(size: 13, weight: .semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 4)
@@ -544,7 +586,7 @@ struct SupportView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .softCard()
 
-            Text("Cảm ơn bạn đã dùng RinDock 💙")
+            Text(L("Cảm ơn bạn đã dùng RinDock 💙", "Thanks for using RinDock 💙"))
                 .noteText()
         }
         .panelStyle(width: 360)
@@ -561,18 +603,18 @@ struct AboutView: View {
             Text("RinDock")
                 .font(.system(size: 26, weight: .bold, design: .rounded))
 
-            Text("Phiên bản \(AppInfo.version)")
+            Text(L("Phiên bản", "Version") + " \(AppInfo.version)")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.secondary)
 
-            Text("Bấm icon app trên Dock để thu nhỏ, bấm lại để hiện lên, giống taskbar trên Windows.")
+            Text(L("Bấm icon app trên Dock để thu nhỏ, bấm lại để hiện lên, giống taskbar trên Windows.", "Click an app's Dock icon to minimize it, click again to bring it back, just like the Windows taskbar."))
                 .font(.system(size: 13))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
 
             VStack(spacing: 12) {
-                Text("Làm bởi Phước Rin")
+                Text(L("Làm bởi Phước Rin", "Made by Phước Rin"))
                     .font(.system(size: 13, weight: .semibold))
 
                 GlassGroup(spacing: 10) {
@@ -593,7 +635,7 @@ struct AboutView: View {
             .softCard()
             .padding(.top, 6)
 
-            Text("Miễn phí · Mã nguồn mở (MIT)")
+            Text(L("Miễn phí · Mã nguồn mở (MIT)", "Free · Open source (MIT)"))
                 .noteText()
                 .padding(.top, 2)
         }
@@ -617,9 +659,9 @@ struct AboutView: View {
 
 enum BugReport {
     static var template: String {
-        "Mô tả lỗi:\n\n\n"
-            + "Các bước để gặp lỗi:\n1. \n2. \n\n"
-            + "App bị ảnh hưởng (nếu có):\n\n"
+        L("Mô tả lỗi:", "What happened:") + "\n\n\n"
+            + L("Các bước để gặp lỗi:", "Steps to reproduce:") + "\n1. \n2. \n\n"
+            + L("App bị ảnh hưởng (nếu có):", "Affected app (if any):") + "\n\n"
             + "---\n" + AppInfo.diagnostics
     }
 
@@ -628,7 +670,7 @@ enum BugReport {
         c.scheme = "mailto"
         c.path = AppInfo.email
         c.queryItems = [
-            URLQueryItem(name: "subject", value: "[RinDock \(AppInfo.version)] Báo lỗi"),
+            URLQueryItem(name: "subject", value: "[RinDock \(AppInfo.version)] " + L("Báo lỗi", "Bug report")),
             URLQueryItem(name: "body", value: template),
         ]
         return c.url
@@ -637,7 +679,7 @@ enum BugReport {
     static var githubURL: URL? {
         var c = URLComponents(string: "https://github.com/PhuocRin/RinDock/issues/new")
         c?.queryItems = [
-            URLQueryItem(name: "title", value: "Báo lỗi: "),
+            URLQueryItem(name: "title", value: L("Báo lỗi: ", "Bug: ")),
             URLQueryItem(name: "body", value: template),
         ]
         return c?.url
@@ -655,24 +697,24 @@ struct BugReportView: View {
                 .foregroundStyle(.white)
                 .shadow(color: Color.orange.opacity(0.6), radius: 12)
 
-            Text("Báo lỗi")
+            Text(L("Báo lỗi", "Report a bug"))
                 .font(.system(size: 22, weight: .bold, design: .rounded))
 
-            Text("Gặp lỗi, hay có app không thu nhỏ được? Bạn mô tả giúp mình nha, mình sẽ sửa ở bản sau.")
+            Text(L("Gặp lỗi, hay có app không thu nhỏ được? Bạn mô tả giúp mình nha, mình sẽ sửa ở bản sau.", "Found a bug, or an app that won't minimize? Tell me what happened and I'll fix it in the next version."))
                 .font(.system(size: 13))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
 
             VStack(alignment: .leading, spacing: 6) {
-                Text("Thông tin gửi kèm")
+                Text(L("Thông tin gửi kèm", "Info included"))
                     .font(.system(size: 11, weight: .semibold))
                 Text(info)
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(Color.white.opacity(0.85))
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
-                Text("Chỉ gồm phiên bản app, macOS và loại chip. Không có thông tin cá nhân.")
+                Text(L("Chỉ gồm phiên bản app, macOS và loại chip. Không có thông tin cá nhân.", "Only the app version, macOS version and chip. No personal information."))
                     .noteText()
                     .padding(.top, 2)
             }
@@ -685,7 +727,7 @@ struct BugReportView: View {
                     Button {
                         if let url = BugReport.emailURL { NSWorkspace.shared.open(url) }
                     } label: {
-                        Label("Gửi qua email", systemImage: "envelope.fill")
+                        Label(L("Gửi qua email", "Send by email"), systemImage: "envelope.fill")
                             .font(.system(size: 13, weight: .semibold))
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 4)
@@ -697,7 +739,7 @@ struct BugReportView: View {
                         Button {
                             if let url = BugReport.githubURL { NSWorkspace.shared.open(url) }
                         } label: {
-                            Text("Báo trên GitHub").frame(maxWidth: .infinity)
+                            Text(L("Báo trên GitHub", "Report on GitHub")).frame(maxWidth: .infinity)
                         }
                         .glassButton()
 
@@ -706,7 +748,7 @@ struct BugReportView: View {
                             NSPasteboard.general.setString(info, forType: .string)
                             copied = true
                         } label: {
-                            Text(copied ? "Đã sao chép" : "Sao chép thông tin").frame(maxWidth: .infinity)
+                            Text(copied ? L("Đã sao chép", "Copied") : L("Sao chép thông tin", "Copy info")).frame(maxWidth: .infinity)
                         }
                         .glassButton()
                     }
@@ -800,31 +842,31 @@ struct UpdateView: View {
             case .idle, .checking:
                 ProgressView()
                     .controlSize(.small)
-                Text("Đang kiểm tra bản mới…")
+                Text(L("Đang kiểm tra bản mới…", "Checking for updates…"))
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
 
             case .upToDate:
-                Text("Bạn đang dùng bản mới nhất")
+                Text(L("Bạn đang dùng bản mới nhất", "You're on the latest version"))
                     .font(.system(size: 19, weight: .bold, design: .rounded))
                 Text("RinDock \(AppInfo.version)")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
 
             case .failed:
-                Text("Chưa kiểm tra được")
+                Text(L("Chưa kiểm tra được", "Couldn't check"))
                     .font(.system(size: 19, weight: .bold, design: .rounded))
-                Text("Bạn kiểm tra kết nối mạng rồi thử lại nha.")
+                Text(L("Bạn kiểm tra kết nối mạng rồi thử lại nha.", "Check your internet connection and try again."))
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
-                Button("Thử lại") { updater.check() }
+                Button(L("Thử lại", "Try again")) { updater.check() }
                     .glassButton()
                     .controlSize(.large)
 
             case let .available(version, url, notes):
-                Text("Có bản mới RinDock \(version)")
+                Text(L("Có bản mới RinDock \(version)", "RinDock \(version) is available"))
                     .font(.system(size: 19, weight: .bold, design: .rounded))
-                Text("Bạn đang dùng bản \(AppInfo.version)")
+                Text(L("Bạn đang dùng bản \(AppInfo.version)", "You're on version \(AppInfo.version)"))
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
 
@@ -843,7 +885,7 @@ struct UpdateView: View {
                 Button {
                     NSWorkspace.shared.open(url)
                 } label: {
-                    Label("Tải bản mới", systemImage: "arrow.down.circle.fill")
+                    Label(L("Tải bản mới", "Download update"), systemImage: "arrow.down.circle.fill")
                         .font(.system(size: 13, weight: .semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 4)
@@ -851,15 +893,15 @@ struct UpdateView: View {
                 .glassButton(prominent: true)
                 .controlSize(.large)
 
-                Text("Tải file .dmg, mở ra và kéo RinDock vào Applications để thay bản cũ.")
+                Text(L("Tải file .dmg, mở ra và kéo RinDock vào Applications để thay bản cũ.", "Download the .dmg, open it and drag RinDock into Applications to replace the old version."))
                     .noteText()
                     .multilineTextAlignment(.center)
             }
 
             VStack(spacing: 8) {
-                Text("Tự kiểm tra cập nhật")
+                Text(L("Tự kiểm tra cập nhật", "Check for updates automatically"))
                     .font(.system(size: 12, weight: .semibold))
-                Picker("Tự kiểm tra cập nhật", selection: $frequency) {
+                Picker(L("Tự kiểm tra cập nhật", "Check for updates automatically"), selection: $frequency) {
                     ForEach(UpdateFrequency.allCases, id: \.self) { f in
                         Text(f.title).tag(f)
                     }
@@ -867,8 +909,10 @@ struct UpdateView: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 Text(frequency == .off
-                     ? "Đã tắt. Bạn vẫn kiểm tra được bất cứ lúc nào bằng Kiểm tra cập nhật… trong menu."
-                     : "RinDock chỉ hỏi GitHub có bản mới không, không gửi thông tin gì của bạn.")
+                     ? L("Đã tắt. Bạn vẫn kiểm tra được bất cứ lúc nào bằng Kiểm tra cập nhật… trong menu.",
+                         "Off. You can still check anytime with Check for Updates… in the menu.")
+                     : L("RinDock chỉ hỏi GitHub có bản mới không, không gửi thông tin gì của bạn.",
+                         "RinDock only asks GitHub whether a new version exists. Nothing about you is sent."))
                     .noteText()
                     .multilineTextAlignment(.center)
             }
@@ -940,23 +984,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.removeAllItems()
 
         if let a = updater.available {
-            menu.addItem(item("⬆︎ Có bản mới \(a.version), tải về…", #selector(openUpdate)))
+            menu.addItem(item(L("⬆︎ Có bản mới \(a.version), tải về…", "⬆︎ RinDock \(a.version) is available, download…"), #selector(openUpdate)))
             menu.addItem(.separator())
         }
 
         if AXIsProcessTrusted() {
-            menu.addItem(label(Prefs.enabled ? "RinDock đang chạy" : "RinDock đang tắt"))
+            menu.addItem(label(Prefs.enabled ? L("RinDock đang chạy", "RinDock is running") : L("RinDock đang tắt", "RinDock is off")))
         } else {
-            menu.addItem(item("⚠️ Cần cấp quyền Accessibility…", #selector(openAccessibility)))
+            menu.addItem(item(L("⚠️ Cần cấp quyền Accessibility…", "⚠️ Accessibility permission needed…"), #selector(openAccessibility)))
         }
         menu.addItem(.separator())
 
-        let toggle = item("Bật", #selector(toggleEnabled))
+        let toggle = item(L("Bật", "Enabled"), #selector(toggleEnabled))
         toggle.state = Prefs.enabled ? .on : .off
         menu.addItem(toggle)
         menu.addItem(.separator())
 
-        menu.addItem(label("Bấm icon app đang dùng trên Dock để:"))
+        menu.addItem(label(L("Bấm icon app đang dùng trên Dock để:", "Clicking the active app's Dock icon:")))
         for mode in ClickMode.allCases {
             let it = item(mode.title, #selector(chooseMode(_:)))
             it.representedObject = mode.rawValue
@@ -966,13 +1010,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         menu.addItem(.separator())
 
-        let login = item("Mở cùng máy", #selector(toggleLogin))
+        let login = item(L("Mở cùng máy", "Open at login"), #selector(toggleLogin))
         login.state = SMAppService.mainApp.status == .enabled ? .on : .off
         menu.addItem(login)
         menu.addItem(.separator())
 
-        menu.addItem(item("Kiểm tra cập nhật…", #selector(checkForUpdates)))
-        let auto = NSMenuItem(title: "Tự kiểm tra cập nhật", action: nil, keyEquivalent: "")
+        menu.addItem(item(L("Kiểm tra cập nhật…", "Check for Updates…"), #selector(checkForUpdates)))
+        let auto = NSMenuItem(title: L("Tự kiểm tra cập nhật", "Check for updates automatically"), action: nil, keyEquivalent: "")
         let sub = NSMenu()
         for f in UpdateFrequency.allCases {
             let it = item(f.title, #selector(chooseUpdateFrequency(_:)))
@@ -984,12 +1028,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(auto)
         menu.addItem(.separator())
 
-        menu.addItem(item("Giới thiệu RinDock", #selector(openAbout)))
-        menu.addItem(item("Báo lỗi…", #selector(openBugReport)))
-        menu.addItem(item("♥ Ủng hộ tác giả…", #selector(openSupport)))
+        let langItem = NSMenuItem(title: "Ngôn ngữ · Language", action: nil, keyEquivalent: "")
+        let langMenu = NSMenu()
+        for lang in AppLanguage.allCases {
+            let it = item(lang.title, #selector(chooseLanguage(_:)))
+            it.representedObject = lang.rawValue
+            it.state = Prefs.language == lang ? .on : .off
+            langMenu.addItem(it)
+        }
+        langItem.submenu = langMenu
+        menu.addItem(langItem)
         menu.addItem(.separator())
 
-        menu.addItem(item("Thoát RinDock", #selector(quit)))
+        menu.addItem(item(L("Giới thiệu RinDock", "About RinDock"), #selector(openAbout)))
+        menu.addItem(item(L("Báo lỗi…", "Report a Bug…"), #selector(openBugReport)))
+        menu.addItem(item(L("♥ Ủng hộ tác giả…", "♥ Support the Author…"), #selector(openSupport)))
+        menu.addItem(.separator())
+
+        menu.addItem(item(L("Thoát RinDock", "Quit RinDock"), #selector(quit)))
     }
 
     private func item(_ title: String, _ action: Selector) -> NSMenuItem {
@@ -1013,7 +1069,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         image?.accessibilityDescription = "RinDock"
         statusItem.button?.image = image
         if let a = updater.available {
-            statusItem.button?.toolTip = "RinDock: có bản mới \(a.version)"
+            statusItem.button?.toolTip = L("RinDock: có bản mới \(a.version)", "RinDock: version \(a.version) is available")
         } else {
             statusItem.button?.toolTip = "RinDock"
         }
@@ -1046,8 +1102,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         } catch {
             let alert = NSAlert()
-            alert.messageText = "Chưa bật được Mở cùng máy"
-            alert.informativeText = "Bạn thêm tay: System Settings → General → Login Items → bấm + → chọn RinDock.\n\n(\(error.localizedDescription))"
+            alert.messageText = L("Chưa bật được Mở cùng máy", "Couldn't turn on Open at login")
+            alert.informativeText = L("Bạn thêm tay: System Settings → General → Login Items → bấm + → chọn RinDock.", "Add it manually: System Settings → General → Login Items → click + → choose RinDock.") + "\n\n(\(error.localizedDescription))"
             NSApp.activate(ignoringOtherApps: true)
             alert.runModal()
         }
@@ -1067,6 +1123,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             Prefs.updateFrequency = f
             updater.checkIfDue()
         }
+    }
+
+    @objc private func chooseLanguage(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let lang = AppLanguage(rawValue: raw) else { return }
+        Prefs.language = lang
+        // Cửa sổ nào đang mở thì vẽ lại ngay bằng ngôn ngữ mới.
+        for panel in [supportPanel, aboutPanel, bugPanel, updatePanel] {
+            panel.reloadIfVisible()
+        }
+        updateIcon()
     }
 
     @objc private func openAbout() {

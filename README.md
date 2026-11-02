@@ -98,6 +98,10 @@ Muốn kiểm tra ngay: bấm icon RinDock → **Kiểm tra cập nhật…**.
 
 Muốn đổi tần suất: bấm icon RinDock → **Tự kiểm tra cập nhật** → chọn **Mỗi ngày**, **Mỗi tuần** hoặc **Tắt**. Cũng chọn được ngay trong cửa sổ Kiểm tra cập nhật.
 
+## Ngôn ngữ
+
+RinDock có tiếng Việt và tiếng Anh. Đổi ở: icon RinDock trên thanh menu → **Ngôn ngữ · Language** → **Tiếng Việt**, **English** hoặc **Theo ngôn ngữ của máy**.
+
 ## RinDock có an toàn không?
 
 - RinDock **không** chụp màn hình, **không** ghi lại thao tác bàn phím.
@@ -153,11 +157,13 @@ cd RinDock
 
 **Permission:** grant Accessibility in **System Settings → Privacy & Security → Accessibility**. RinDock uses it only to detect Dock clicks and minimize or restore windows. No screen recording, no keylogging. The only network request is a check with GitHub for a new version (daily, weekly or off, set in the menu); nothing about you is sent.
 
-**Updates & bug reports:** menu bar icon → **Kiểm tra cập nhật…** / **Báo lỗi…** (email or GitHub issue, prefilled with app version, macOS version and chip).
+**Language:** menu bar icon → **Ngôn ngữ · Language** → **English**. All menus and windows switch to English.
+
+**Updates & bug reports:** menu bar icon → **Check for Updates…** / **Report a Bug…** (email or GitHub issue, prefilled with app version, macOS version and chip).
 
 **Modes (menu bar):** minimize all windows (default), minimize the focused window, or hide the app. Hold ⌘, ⌥, ⌃ or ⇧ while clicking to get the normal Dock behavior.
 
-**Support the author:** RinDock is free. You can support me from the app (menu bar icon → **♥ Ủng hộ tác giả…**) or via [PayPal.me/phuocrin](https://paypal.me/phuocrin). A ⭐ on the repo helps too.
+**Support the author:** RinDock is free. You can support me from the app (menu bar icon → **♥ Support the Author…**) or via [PayPal.me/phuocrin](https://paypal.me/phuocrin). A ⭐ on the repo helps too.
 
 ---
 
