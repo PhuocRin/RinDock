@@ -273,9 +273,14 @@ struct SupportView: View {
                         .padding(12)
                         .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(.white))
                         .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
-                    Text("Quét mã QR để ủng hộ")
+                    Text("Quét bằng app ngân hàng")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.secondary)
+                    Text("App ngân hàng sẽ hiện tên chủ tài khoản, bạn kiểm tra đúng tên trước khi chuyển nha.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.vertical, 4)
             }
