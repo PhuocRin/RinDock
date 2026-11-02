@@ -903,13 +903,31 @@ enum UpdateSecurity {
         return (text as String?)?.contains("cdhash") ?? true
     }
 
-    /// App mới phải còn nguyên chữ ký, và (nếu app hiện tại ký bằng chứng chỉ) phải cùng chứng chỉ.
+    /// Chữ ký Developer ID của Apple (dùng khi sau này chuyển từ chứng chỉ tự tạo sang chứng chỉ Apple).
+    static let developerIDRequirement: SecRequirement? = {
+        let text = "anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists "
+            + "and certificate leaf[field.1.2.840.113635.100.6.1.13] exists"
+        var req: SecRequirement?
+        guard SecRequirementCreateWithString(text as CFString, [], &req) == errSecSuccess else { return nil }
+        return req
+    }()
+
+    /// App mới phải còn nguyên chữ ký, và phải cùng chứng chỉ với app đang chạy
+    /// HOẶC được ký bằng Developer ID của Apple. (Gói chứa nó đã qua kiểm tra chữ ký ed25519 của tác giả.)
     static func newAppIsTrusted(_ url: URL) -> Bool {
         var code: SecStaticCode?
         guard SecStaticCodeCreateWithPath(url as CFURL, [], &code) == errSecSuccess, let code else { return false }
         let flags = SecCSFlags(rawValue: kSecCSCheckAllArchitectures | kSecCSCheckNestedCode | kSecCSStrictValidate)
-        let req: SecRequirement? = currentIsAdHoc ? nil : currentRequirement()
-        return SecStaticCodeCheckValidity(code, flags, req) == errSecSuccess
+        if currentIsAdHoc {
+            return SecStaticCodeCheckValidity(code, flags, nil) == errSecSuccess
+        }
+        if let same = currentRequirement(), SecStaticCodeCheckValidity(code, flags, same) == errSecSuccess {
+            return true
+        }
+        if let devID = developerIDRequirement, SecStaticCodeCheckValidity(code, flags, devID) == errSecSuccess {
+            return true
+        }
+        return false
     }
 }
 
