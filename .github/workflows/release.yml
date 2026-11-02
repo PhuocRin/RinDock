@@ -11,15 +11,27 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      runner:
+        description: "Máy build (macos-latest = Mac chip M; macos-26-intel = Mac Intel, dùng khi máy chip M kẹt hàng)"
+        default: macos-latest
+        type: choice
+        options: [macos-latest, macos-26-intel]
 
 permissions:
   contents: write
 
 jobs:
   build:
-    runs-on: macos-latest
+    runs-on: ${{ inputs.runner || 'macos-latest' }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Kiểm tra trình biên dịch (cần Swift 6.2+ để có Liquid Glass)
+        run: |
+          uname -m
+          swift --version
+          swift --version 2>&1 | python3 -c "import re,sys; v=re.search(r'Swift version (\\d+)\\.(\\d+)', sys.stdin.read()); ok=v and (int(v[1]),int(v[2]))>=(6,2); print('Swift', v[1]+'.'+v[2] if v else '?', 'OK' if ok else 'QUÁ CŨ'); sys.exit(0 if ok else 1)"
 
       - name: Đánh số build (mỗi lần build một số mới, để macOS đọc lại icon)
         run: /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${{ github.run_number }}" Info.plist
