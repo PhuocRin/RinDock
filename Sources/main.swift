@@ -5,6 +5,8 @@ import Cocoa
 import ApplicationServices
 import ServiceManagement
 import SwiftUI
+import CryptoKit
+import Security
 
 // MARK: - Cài đặt
 
@@ -71,6 +73,26 @@ enum UpdateFrequency: String, CaseIterable {
     }
 }
 
+enum UpdateMode: String, CaseIterable {
+    case auto, ask, notify
+
+    var title: String {
+        switch self {
+        case .auto:   return L("Tự cập nhật", "Install automatically")
+        case .ask:    return L("Hỏi trước khi cập nhật", "Ask before installing")
+        case .notify: return L("Chỉ báo cho tôi", "Just notify me")
+        }
+    }
+
+    var shortTitle: String {
+        switch self {
+        case .auto:   return L("Tự cập nhật", "Auto")
+        case .ask:    return L("Hỏi trước", "Ask")
+        case .notify: return L("Chỉ báo", "Notify")
+        }
+    }
+}
+
 enum Prefs {
     private static let d = UserDefaults.standard
 
@@ -84,12 +106,12 @@ enum Prefs {
         set { d.set(newValue.rawValue, forKey: "mode") }
     }
 
-    /// Tần suất tự hỏi GitHub có bản mới không. Mặc định mỗi ngày.
     static var language: AppLanguage {
         get { AppLanguage(rawValue: d.string(forKey: "language") ?? "") ?? .system }
         set { d.set(newValue.rawValue, forKey: "language") }
     }
 
+    /// Tần suất tự hỏi GitHub có bản mới không. Mặc định mỗi ngày.
     static var updateFrequency: UpdateFrequency {
         get { UpdateFrequency(rawValue: d.string(forKey: "updateFrequency") ?? "") ?? .daily }
         set { d.set(newValue.rawValue, forKey: "updateFrequency") }
@@ -107,6 +129,18 @@ enum Prefs {
     static var lastUpdateCheck: Date? {
         get { d.object(forKey: "lastUpdateCheck") as? Date }
         set { d.set(newValue, forKey: "lastUpdateCheck") }
+    }
+
+    /// Có bản mới thì làm gì. Mặc định hỏi trước.
+    static var updateMode: UpdateMode {
+        get { UpdateMode(rawValue: d.string(forKey: "updateMode") ?? "") ?? .ask }
+        set { d.set(newValue.rawValue, forKey: "updateMode") }
+    }
+
+    /// Phiên bản trước khi tự cập nhật (để báo "đã cập nhật" sau khi mở lại).
+    static var justUpdatedFrom: String? {
+        get { d.string(forKey: "justUpdatedFrom") }
+        set { d.set(newValue, forKey: "justUpdatedFrom") }
     }
 }
 
@@ -763,41 +797,138 @@ struct BugReportView: View {
 
 // MARK: - Cập nhật
 
-@MainActor
-final class Updater: ObservableObject {
-    enum State: Equatable {
-        case idle, checking, upToDate, failed
-        case available(version: String, url: URL, notes: String)
+/// Kiểm tra gói cập nhật có đúng do Phước Rin phát hành không.
+enum UpdateSecurity {
+    /// Khoá công khai ed25519. Khoá bí mật tương ứng nằm trong secret RINDOCK_SIGNING trên GitHub.
+    static let publicKeyBase64 = "cp4+XU5KBpctbtgRelU5WVsCOlPVuVl2X71we0GpjW0="
+
+    static func verify(_ data: Data, signature: Data) -> Bool {
+        guard let raw = Data(base64Encoded: publicKeyBase64),
+              let key = try? Curve25519.Signing.PublicKey(rawRepresentation: raw) else { return false }
+        return key.isValidSignature(signature, for: data)
     }
 
-    struct Release: Decodable {
+    /// Yêu cầu chữ ký của chính app đang chạy (nil nếu không đọc được).
+    static func currentRequirement() -> SecRequirement? {
+        var code: SecCode?
+        guard SecCodeCopySelf([], &code) == errSecSuccess, let code else { return nil }
+        var staticCode: SecStaticCode?
+        guard SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess, let staticCode else { return nil }
+        var req: SecRequirement?
+        guard SecCodeCopyDesignatedRequirement(staticCode, [], &req) == errSecSuccess else { return nil }
+        return req
+    }
+
+    /// App đang chạy là bản ký ad-hoc (bản thử cũ) hay bản ký bằng chứng chỉ.
+    static var currentIsAdHoc: Bool {
+        guard let req = currentRequirement() else { return true }
+        var text: CFString?
+        SecRequirementCopyString(req, [], &text)
+        return (text as String?)?.contains("cdhash") ?? true
+    }
+
+    /// App mới phải còn nguyên chữ ký, và (nếu app hiện tại ký bằng chứng chỉ) phải cùng chứng chỉ.
+    static func newAppIsTrusted(_ url: URL) -> Bool {
+        var code: SecStaticCode?
+        guard SecStaticCodeCreateWithPath(url as CFURL, [], &code) == errSecSuccess, let code else { return false }
+        let flags = SecCSFlags(rawValue: kSecCSCheckAllArchitectures | kSecCSCheckNestedCode | kSecCSStrictValidate)
+        let req: SecRequirement? = currentIsAdHoc ? nil : currentRequirement()
+        return SecStaticCodeCheckValidity(code, flags, req) == errSecSuccess
+    }
+}
+
+enum UpdateError: Error {
+    case missingPackage, badSignature, badApp, notWritable, failed(String)
+
+    var message: String {
+        switch self {
+        case .missingPackage:
+            return L("Bản này chưa có gói tự cập nhật. Bạn tải thủ công giúp mình nha.",
+                     "This version has no auto-update package. Please download it manually.")
+        case .badSignature:
+            return L("Gói tải về không đúng chữ ký của Phước Rin nên RinDock không cài.",
+                     "The downloaded package isn't signed by Phước Rin, so RinDock won't install it.")
+        case .badApp:
+            return L("App trong gói cập nhật không hợp lệ nên RinDock không cài.",
+                     "The app inside the update package isn't valid, so RinDock won't install it.")
+        case .notWritable:
+            return L("RinDock chỉ tự cập nhật được khi nằm trong thư mục Applications. Bạn kéo RinDock vào Applications rồi thử lại nha.",
+                     "RinDock can only update itself from the Applications folder. Move it there and try again.")
+        case .failed(let detail):
+            return L("Có lỗi khi cập nhật: ", "Update failed: ") + detail
+        }
+    }
+}
+
+@MainActor
+final class Updater: ObservableObject {
+    struct Asset: Decodable, Equatable {
+        let name: String
+        let browser_download_url: URL
+    }
+
+    struct Release: Decodable, Equatable {
         let tag_name: String
         let html_url: URL
         let body: String?
+        let assets: [Asset]
+
+        var version: String { tag_name.trimmingCharacters(in: CharacterSet(charactersIn: "vV ")) }
+        var notes: String { body ?? "" }
+        var zipURL: URL? { assets.first { $0.name.hasSuffix(".zip") }?.browser_download_url }
+        var sigURL: URL? { assets.first { $0.name.hasSuffix(".zip.sig") }?.browser_download_url }
+        var canAutoInstall: Bool { zipURL != nil && sigURL != nil }
+    }
+
+    enum State: Equatable {
+        case idle, checking, upToDate, failed
+        case available(Release)
+        case downloading(Release)
+        case installing(Release)
+        case installFailed(Release, String)
+        case updated(from: String)
     }
 
     @Published private(set) var state: State = .idle
     var onChange: (@MainActor () -> Void)?
+    /// Gọi khi kiểm tra nền thấy bản mới (AppDelegate quyết định làm gì theo cài đặt).
+    var onFoundInBackground: (@MainActor (Release) -> Void)?
 
-    var available: (version: String, url: URL)? {
-        if case let .available(v, u, _) = state { return (v, u) }
+    var available: Release? {
+        if case let .available(r) = state { return r }
         return nil
+    }
+
+    var isBusy: Bool {
+        switch state {
+        case .checking, .downloading, .installing: return true
+        default: return false
+        }
+    }
+
+    /// Vừa tự cập nhật xong và mở lại: hiện "đã cập nhật".
+    func noteJustUpdated() -> Bool {
+        guard let from = Prefs.justUpdatedFrom else { return false }
+        Prefs.justUpdatedFrom = nil
+        guard from != AppInfo.version else { return false }
+        state = .updated(from: from)
+        return true
     }
 
     /// Kiểm tra nền theo tần suất người dùng chọn (mỗi ngày / mỗi tuần / tắt).
     func checkIfDue() {
         guard let interval = Prefs.updateFrequency.interval else { return }
         if let last = Prefs.lastUpdateCheck, Date().timeIntervalSince(last) < interval { return }
-        check()
+        check(background: true)
     }
 
-    func check() {
-        if state == .checking { return }
+    func check(background: Bool = false) {
+        if isBusy { return }
         state = .checking
-        Task { await run() }
+        Task { await run(background: background) }
     }
 
-    private func run() async {
+    private func run(background: Bool) async {
         var req = URLRequest(url: AppInfo.apiLatestRelease, timeoutInterval: 15)
         req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         req.setValue("RinDock/\(AppInfo.version)", forHTTPHeaderField: "User-Agent")
@@ -806,14 +937,53 @@ final class Updater: ObservableObject {
             guard (resp as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.badServerResponse) }
             let rel = try JSONDecoder().decode(Release.self, from: data)
             Prefs.lastUpdateCheck = Date()
-            let latest = rel.tag_name.trimmingCharacters(in: CharacterSet(charactersIn: "vV "))
-            if Updater.isNewer(latest, than: AppInfo.version) {
-                state = .available(version: latest, url: rel.html_url, notes: rel.body ?? "")
-            } else {
-                state = .upToDate
+            if Updater.isNewer(rel.version, than: AppInfo.version) {
+                state = .available(rel)
+                onChange?()
+                if background { onFoundInBackground?(rel) }
+                return
             }
+            state = .upToDate
         } catch {
-            state = .failed
+            state = background ? .idle : .failed
+        }
+        onChange?()
+    }
+
+    func install(_ rel: Release) {
+        switch state {
+        case .downloading, .installing: return
+        default: break
+        }
+        Task { await performInstall(rel) }
+    }
+
+    private func performInstall(_ rel: Release) async {
+        do {
+            guard let zipURL = rel.zipURL, let sigURL = rel.sigURL else { throw UpdateError.missingPackage }
+            state = .downloading(rel)
+            onChange?()
+
+            let (zipData, zipResp) = try await URLSession.shared.data(from: zipURL)
+            let (sigData, sigResp) = try await URLSession.shared.data(from: sigURL)
+            guard (zipResp as? HTTPURLResponse)?.statusCode == 200,
+                  (sigResp as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.badServerResponse) }
+            let sigText = String(decoding: sigData, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let signature = Data(base64Encoded: sigText),
+                  UpdateSecurity.verify(zipData, signature: signature) else { throw UpdateError.badSignature }
+
+            state = .installing(rel)
+            let newApp = try await Task.detached { () throws -> URL in
+                try Installer.unpack(zipData)
+            }.value
+            guard Installer.bundleID(of: newApp) == Bundle.main.bundleIdentifier,
+                  UpdateSecurity.newAppIsTrusted(newApp) else { throw UpdateError.badApp }
+
+            try Installer.replaceAndRelaunch(with: newApp)
+        } catch let e as UpdateError {
+            state = .installFailed(rel, e.message)
+        } catch {
+            state = .installFailed(rel, UpdateError.failed(error.localizedDescription).message)
         }
         onChange?()
     }
@@ -830,9 +1000,69 @@ final class Updater: ObservableObject {
     }
 }
 
+enum Installer {
+    /// Giải nén gói .zip vào thư mục tạm, trả về đường dẫn RinDock.app mới.
+    static func unpack(_ zipData: Data) throws -> URL {
+        let fm = FileManager.default
+        let dir = fm.temporaryDirectory.appendingPathComponent("RinDockUpdate-\(UUID().uuidString)")
+        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        let zip = dir.appendingPathComponent("update.zip")
+        try zipData.write(to: zip)
+        let out = dir.appendingPathComponent("unpacked")
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+        p.arguments = ["-x", "-k", zip.path, out.path]
+        try p.run()
+        p.waitUntilExit()
+        guard p.terminationStatus == 0 else { throw UpdateError.failed("ditto \(p.terminationStatus)") }
+        let app = out.appendingPathComponent("RinDock.app")
+        guard fm.fileExists(atPath: app.path) else { throw UpdateError.badApp }
+        return app
+    }
+
+    static func bundleID(of app: URL) -> String? {
+        Bundle(url: app)?.bundleIdentifier
+    }
+
+    /// Thoát RinDock, thay app cũ bằng app mới, rồi mở lại.
+    @MainActor
+    static func replaceAndRelaunch(with newApp: URL) throws {
+        let fm = FileManager.default
+        let current = Bundle.main.bundleURL
+        let parent = current.deletingLastPathComponent()
+        // App chạy từ ổ .dmg hoặc bị macOS "dời chỗ" tạm (App Translocation) thì không ghi được.
+        guard !current.path.contains("/AppTranslocation/"),
+              fm.isWritableFile(atPath: parent.path),
+              fm.isWritableFile(atPath: current.path) else { throw UpdateError.notWritable }
+
+        Prefs.justUpdatedFrom = AppInfo.version
+        let pid = ProcessInfo.processInfo.processIdentifier
+        let script = """
+        while /bin/kill -0 \(pid) 2>/dev/null; do /bin/sleep 0.2; done
+        /bin/rm -rf "$1.old"
+        if /bin/mv "$1" "$1.old"; then
+          if /bin/mv "$2" "$1"; then /bin/rm -rf "$1.old"; else /bin/mv "$1.old" "$1"; fi
+        fi
+        /usr/bin/xattr -dr com.apple.quarantine "$1" 2>/dev/null
+        /usr/bin/open "$1"
+        """
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/sh")
+        p.arguments = ["-c", script, "rindock-update", current.path, newApp.path]
+        do {
+            try p.run()
+        } catch {
+            Prefs.justUpdatedFrom = nil
+            throw UpdateError.failed(error.localizedDescription)
+        }
+        NSApp.terminate(nil)
+    }
+}
+
 struct UpdateView: View {
     @ObservedObject var updater: Updater
     @AppStorage("updateFrequency") private var frequency: UpdateFrequency = .daily
+    @AppStorage("updateMode") private var mode: UpdateMode = .ask
 
     var body: some View {
         VStack(spacing: 14) {
@@ -847,81 +1077,188 @@ struct UpdateView: View {
                     .foregroundStyle(.secondary)
 
             case .upToDate:
-                Text(L("Bạn đang dùng bản mới nhất", "You're on the latest version"))
-                    .font(.system(size: 19, weight: .bold, design: .rounded))
+                title(L("Bạn đang dùng bản mới nhất", "You're on the latest version"))
                 Text("RinDock \(AppInfo.version)")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
 
             case .failed:
-                Text(L("Chưa kiểm tra được", "Couldn't check"))
-                    .font(.system(size: 19, weight: .bold, design: .rounded))
+                title(L("Chưa kiểm tra được", "Couldn't check"))
                 Text(L("Bạn kiểm tra kết nối mạng rồi thử lại nha.", "Check your internet connection and try again."))
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
                 Button(L("Thử lại", "Try again")) { updater.check() }
                     .glassButton()
                     .controlSize(.large)
 
-            case let .available(version, url, notes):
-                Text(L("Có bản mới RinDock \(version)", "RinDock \(version) is available"))
-                    .font(.system(size: 19, weight: .bold, design: .rounded))
+            case let .available(rel):
+                title(L("Có bản mới RinDock \(rel.version)", "RinDock \(rel.version) is available"))
                 Text(L("Bạn đang dùng bản \(AppInfo.version)", "You're on version \(AppInfo.version)"))
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
+                notesBox(rel.notes)
+                actions(for: rel)
 
-                if !notes.isEmpty {
-                    ScrollView {
-                        Text(notes)
-                            .font(.system(size: 12))
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .textSelection(.enabled)
-                    }
-                    .frame(maxHeight: 150)
-                    .padding(14)
-                    .softCard(cornerRadius: 16)
-                }
+            case let .downloading(rel):
+                ProgressView()
+                    .controlSize(.small)
+                title(L("Đang tải RinDock \(rel.version)…", "Downloading RinDock \(rel.version)…"))
 
-                Button {
-                    NSWorkspace.shared.open(url)
-                } label: {
-                    Label(L("Tải bản mới", "Download update"), systemImage: "arrow.down.circle.fill")
-                        .font(.system(size: 13, weight: .semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 4)
-                }
-                .glassButton(prominent: true)
-                .controlSize(.large)
-
-                Text(L("Tải file .dmg, mở ra và kéo RinDock vào Applications để thay bản cũ.", "Download the .dmg, open it and drag RinDock into Applications to replace the old version."))
+            case let .installing(rel):
+                ProgressView()
+                    .controlSize(.small)
+                title(L("Đang cài RinDock \(rel.version)…", "Installing RinDock \(rel.version)…"))
+                Text(L("RinDock sẽ tự đóng và mở lại trong vài giây.", "RinDock will quit and reopen in a few seconds."))
                     .noteText()
                     .multilineTextAlignment(.center)
+
+            case let .installFailed(rel, reason):
+                title(L("Chưa cập nhật được", "Couldn't update"))
+                Text(reason)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                actions(for: rel)
+
+            case let .updated(from):
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.system(size: 26, weight: .semibold))
+                    .foregroundStyle(.white)
+                title(L("Đã cập nhật lên RinDock \(AppInfo.version)", "Updated to RinDock \(AppInfo.version)"))
+                Text(L("Từ bản \(from)", "From version \(from)"))
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
             }
 
-            VStack(spacing: 8) {
-                Text(L("Tự kiểm tra cập nhật", "Check for updates automatically"))
+            settings
+        }
+        .panelStyle(width: 360)
+    }
+
+    private func title(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 19, weight: .bold, design: .rounded))
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    @ViewBuilder
+    private func notesBox(_ notes: String) -> some View {
+        if !notes.isEmpty {
+            ScrollView {
+                Text(notes)
+                    .font(.system(size: 12))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
+            }
+            .frame(maxHeight: 140)
+            .padding(14)
+            .softCard(cornerRadius: 16)
+        }
+    }
+
+    @ViewBuilder
+    private func actions(for rel: Updater.Release) -> some View {
+        GlassGroup(spacing: 10) {
+            VStack(spacing: 10) {
+                if rel.canAutoInstall {
+                    Button {
+                        updater.install(rel)
+                    } label: {
+                        Label(L("Cập nhật ngay", "Update now"), systemImage: "arrow.down.circle.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 4)
+                    }
+                    .glassButton(prominent: true)
+                    .controlSize(.large)
+
+                    Button {
+                        NSWorkspace.shared.open(rel.html_url)
+                    } label: {
+                        Text(L("Tải thủ công", "Download manually"))
+                            .font(.system(size: 12))
+                            .frame(maxWidth: .infinity)
+                    }
+                    .glassButton()
+                    .controlSize(.large)
+                } else {
+                    Button {
+                        NSWorkspace.shared.open(rel.html_url)
+                    } label: {
+                        Label(L("Tải bản mới", "Download update"), systemImage: "arrow.down.circle.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 4)
+                    }
+                    .glassButton(prominent: true)
+                    .controlSize(.large)
+                }
+            }
+        }
+        if UpdateSecurity.currentIsAdHoc && rel.canAutoInstall {
+            Text(L("Lần cập nhật này bạn sẽ phải cấp lại quyền Accessibility một lần. Từ bản sau thì không cần nữa.",
+                   "After this update you'll need to grant Accessibility permission once more. Future updates won't need it."))
+                .noteText()
+                .multilineTextAlignment(.center)
+        }
+    }
+
+    private var settings: some View {
+        VStack(spacing: 10) {
+            VStack(spacing: 6) {
+                Text(L("Tự kiểm tra cập nhật", "Check for updates"))
                     .font(.system(size: 12, weight: .semibold))
-                Picker(L("Tự kiểm tra cập nhật", "Check for updates automatically"), selection: $frequency) {
+                Picker(L("Tự kiểm tra cập nhật", "Check for updates"), selection: $frequency) {
                     ForEach(UpdateFrequency.allCases, id: \.self) { f in
                         Text(f.title).tag(f)
                     }
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                Text(frequency == .off
-                     ? L("Đã tắt. Bạn vẫn kiểm tra được bất cứ lúc nào bằng Kiểm tra cập nhật… trong menu.",
-                         "Off. You can still check anytime with Check for Updates… in the menu.")
-                     : L("RinDock chỉ hỏi GitHub có bản mới không, không gửi thông tin gì của bạn.",
-                         "RinDock only asks GitHub whether a new version exists. Nothing about you is sent."))
-                    .noteText()
-                    .multilineTextAlignment(.center)
             }
-            .padding(14)
-            .frame(maxWidth: .infinity)
-            .softCard(cornerRadius: 16)
-            .padding(.top, 4)
+
+            VStack(spacing: 6) {
+                Text(L("Khi có bản mới", "When an update is available"))
+                    .font(.system(size: 12, weight: .semibold))
+                Picker(L("Khi có bản mới", "When an update is available"), selection: $mode) {
+                    ForEach(UpdateMode.allCases, id: \.self) { m in
+                        Text(m.shortTitle).tag(m)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .disabled(frequency == .off)
+            }
+
+            Text(settingsNote)
+                .noteText()
+                .multilineTextAlignment(.center)
         }
-        .panelStyle()
+        .padding(14)
+        .frame(maxWidth: .infinity)
+        .softCard(cornerRadius: 16)
+        .padding(.top, 4)
+    }
+
+    private var settingsNote: String {
+        if frequency == .off {
+            return L("Đã tắt tự kiểm tra. Bạn vẫn kiểm tra được bất cứ lúc nào bằng Kiểm tra cập nhật… trong menu.",
+                     "Automatic checks are off. You can still check anytime with Check for Updates… in the menu.")
+        }
+        switch mode {
+        case .auto:
+            return L("Có bản mới là RinDock tự tải, kiểm tra chữ ký rồi cài và mở lại. Chỉ hỏi GitHub, không gửi thông tin gì của bạn.",
+                     "RinDock downloads, verifies and installs new versions on its own, then reopens. It only asks GitHub; nothing about you is sent.")
+        case .ask:
+            return L("Có bản mới là RinDock hỏi bạn trước, bấm một nút là xong. Chỉ hỏi GitHub, không gửi thông tin gì của bạn.",
+                     "RinDock asks you first; one click installs it. It only asks GitHub; nothing about you is sent.")
+        case .notify:
+            return L("Có bản mới thì icon trên thanh menu đổi dấu, bạn tự cập nhật khi muốn. Chỉ hỏi GitHub, không gửi thông tin gì của bạn.",
+                     "The menu bar icon changes when an update is out; you update when you like. It only asks GitHub; nothing about you is sent.")
+        }
     }
 }
 
@@ -961,6 +1298,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         Prefs.migrate()
         updater.onChange = { [weak self] in self?.updateIcon() }
+        updater.onFoundInBackground = { [weak self] rel in self?.handleFoundUpdate(rel) }
+        if updater.noteJustUpdated() {
+            updatePanel.show()
+        }
         updater.checkIfDue()
         updateTimer = Timer.scheduledTimer(timeInterval: 6 * 3600, target: self,
                                            selector: #selector(periodicUpdateCheck(_:)),
@@ -980,11 +1321,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         updater.checkIfDue()
     }
 
+    private func handleFoundUpdate(_ rel: Updater.Release) {
+        switch Prefs.updateMode {
+        case .auto:
+            if rel.canAutoInstall { updater.install(rel) }
+        case .ask:
+            updatePanel.show()
+        case .notify:
+            break
+        }
+    }
+
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
 
         if let a = updater.available {
-            menu.addItem(item(L("⬆︎ Có bản mới \(a.version), tải về…", "⬆︎ RinDock \(a.version) is available, download…"), #selector(openUpdate)))
+            menu.addItem(item(L("⬆︎ Có bản mới \(a.version), cập nhật…", "⬆︎ RinDock \(a.version) is available, update…"), #selector(openUpdate)))
             menu.addItem(.separator())
         }
 
@@ -1026,6 +1378,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         auto.submenu = sub
         menu.addItem(auto)
+
+        let whenItem = NSMenuItem(title: L("Khi có bản mới", "When an update is available"), action: nil, keyEquivalent: "")
+        let whenMenu = NSMenu()
+        for m in UpdateMode.allCases {
+            let it = item(m.title, #selector(chooseUpdateMode(_:)))
+            it.representedObject = m.rawValue
+            it.state = Prefs.updateMode == m ? .on : .off
+            whenMenu.addItem(it)
+        }
+        whenItem.submenu = whenMenu
+        menu.addItem(whenItem)
         menu.addItem(.separator())
 
         let langItem = NSMenuItem(title: "Ngôn ngữ · Language", action: nil, keyEquivalent: "")
@@ -1116,6 +1479,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func openUpdate() {
         updatePanel.show()
+    }
+
+    @objc private func chooseUpdateMode(_ sender: NSMenuItem) {
+        if let raw = sender.representedObject as? String, let m = UpdateMode(rawValue: raw) {
+            Prefs.updateMode = m
+        }
     }
 
     @objc private func chooseUpdateFrequency(_ sender: NSMenuItem) {

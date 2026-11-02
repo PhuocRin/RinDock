@@ -92,11 +92,21 @@ Icon RinDock trên thanh menu sáng lên là đã chạy.
 
 ## Cập nhật
 
-RinDock tự kiểm tra bản mới (mặc định mỗi ngày). Có bản mới thì icon trên thanh menu đổi thành icon có mũi tên, và menu hiện dòng **⬆︎ Có bản mới**. Bấm vào, tải file `.dmg`, kéo RinDock vào Applications để thay bản cũ.
+RinDock tự cập nhật được, không cần tải lại từ GitHub. Bạn chọn cách bạn thích, ở menu RinDock hoặc trong cửa sổ **Kiểm tra cập nhật…**:
+
+**Tự kiểm tra cập nhật:** Mỗi ngày (mặc định) · Mỗi tuần · Tắt
+
+**Khi có bản mới:**
+- **Tự cập nhật**: RinDock tự tải, kiểm tra chữ ký, cài và mở lại.
+- **Hỏi trước khi cập nhật** (mặc định): hiện cửa sổ hỏi, bấm **Cập nhật ngay** là xong.
+- **Chỉ báo cho tôi**: icon trên thanh menu thêm dấu chấm, bạn cập nhật khi muốn.
 
 Muốn kiểm tra ngay: bấm icon RinDock → **Kiểm tra cập nhật…**.
 
-Muốn đổi tần suất: bấm icon RinDock → **Tự kiểm tra cập nhật** → chọn **Mỗi ngày**, **Mỗi tuần** hoặc **Tắt**. Cũng chọn được ngay trong cửa sổ Kiểm tra cập nhật.
+Lưu ý:
+- Tự cập nhật chỉ chạy khi RinDock nằm trong thư mục **Applications**.
+- Mọi bản cập nhật đều được ký số. RinDock kiểm tra chữ ký trước khi cài, sai chữ ký là không cài.
+- Bản cập nhật giữ nguyên quyền Accessibility, bạn không phải cấp lại.
 
 ## Ngôn ngữ
 
@@ -106,7 +116,8 @@ RinDock có tiếng Việt và tiếng Anh. Đổi ở: icon RinDock trên thanh
 
 - RinDock **không** chụp màn hình, **không** ghi lại thao tác bàn phím.
 - Quyền Accessibility chỉ dùng để đọc icon Dock dưới con trỏ và thu nhỏ / hiện cửa sổ.
-- Kết nối mạng duy nhất: hỏi GitHub xem có bản mới không (mỗi ngày hoặc mỗi tuần một lần, tắt được trong menu). Không gửi thông tin gì của bạn.
+- Kết nối mạng duy nhất: hỏi GitHub có bản mới không (mỗi ngày, mỗi tuần, hoặc tắt), và tải bản mới khi cập nhật. Không gửi thông tin gì của bạn.
+- Bản cập nhật được ký số; RinDock chỉ cài khi chữ ký đúng là của tác giả.
 - Khi bạn bấm **Báo lỗi**, app chỉ mở email hoặc GitHub có điền sẵn phiên bản app, macOS và loại chip. Bạn xem được hết trước khi gửi, không gửi thì không có gì đi đâu cả.
 - Toàn bộ mã nguồn nằm trong một file: [`Sources/main.swift`](Sources/main.swift). Bạn có thể đọc trước khi cài.
 
@@ -115,7 +126,7 @@ RinDock có tiếng Việt và tiếng Anh. Đổi ở: icon RinDock trên thanh
 Bấm icon RinDock trên thanh menu → **Báo lỗi…** → chọn **Gửi qua email** hoặc **Báo trên GitHub**. Mô tả lỗi giúp mình nha.
 
 **RinDock không làm gì khi bấm Dock**
-Vào **System Settings → Privacy & Security → Accessibility**, chọn RinDock, bấm nút **−** để xoá, rồi mở lại RinDock và cấp quyền lại. Hay gặp sau khi cập nhật bản mới.
+Vào **System Settings → Privacy & Security → Accessibility**, chọn RinDock, bấm nút **−** để xoá, rồi mở lại RinDock và cấp quyền lại. Hay gặp khi chuyển từ bản thử cũ sang bản mới.
 
 **Một app nào đó không thu nhỏ được**
 Một số app khai báo cửa sổ theo kiểu riêng nên RinDock không nhận ra. Hãy mở [Issue](../../issues) kèm tên app.
@@ -155,11 +166,13 @@ cd RinDock
 ./build.sh install
 ```
 
-**Permission:** grant Accessibility in **System Settings → Privacy & Security → Accessibility**. RinDock uses it only to detect Dock clicks and minimize or restore windows. No screen recording, no keylogging. The only network request is a check with GitHub for a new version (daily, weekly or off, set in the menu); nothing about you is sent.
+**Permission:** grant Accessibility in **System Settings → Privacy & Security → Accessibility**. RinDock uses it only to detect Dock clicks and minimize or restore windows. No screen recording, no keylogging. Network use: checking GitHub for a new version (daily, weekly or off) and downloading it when updating; nothing about you is sent.
 
 **Language:** menu bar icon → **Ngôn ngữ · Language** → **English**. All menus and windows switch to English.
 
-**Updates & bug reports:** menu bar icon → **Check for Updates…** / **Report a Bug…** (email or GitHub issue, prefilled with app version, macOS version and chip).
+**Updates:** RinDock updates itself. Choose how often it checks (daily, weekly, off) and what happens when an update is out (install automatically, ask first, or just notify). Every update is signed and verified before installing, and Accessibility permission is kept across updates. Self-update works when RinDock is in the Applications folder.
+
+**Bug reports:** menu bar icon → **Report a Bug…** (email or GitHub issue, prefilled with app version, macOS version and chip).
 
 **Modes (menu bar):** minimize all windows (default), minimize the focused window, or hide the app. Hold ⌘, ⌥, ⌃ or ⇧ while clicking to get the normal Dock behavior.
 
