@@ -7,6 +7,7 @@ import ServiceManagement
 import SwiftUI
 import CryptoKit
 import Combine
+import UniformTypeIdentifiers
 import Security
 
 // MARK: - Cài đặt
@@ -94,6 +95,44 @@ enum UpdateMode: String, CaseIterable {
     }
 }
 
+/// Cài đặt riêng cho từng app (khi bấm icon của app đó trên Dock).
+enum AppRule: String, CaseIterable {
+    case useDefault, minimizeAll, minimizeFocused, hide, ignore
+
+    var title: String {
+        switch self {
+        case .useDefault:      return L("Theo cài đặt chung", "Use general setting")
+        case .minimizeAll:     return L("Thu nhỏ tất cả cửa sổ", "Minimize all windows")
+        case .minimizeFocused: return L("Chỉ thu nhỏ cửa sổ đang dùng", "Minimize active window")
+        case .hide:            return L("Ẩn app", "Hide the app")
+        case .ignore:          return L("Bỏ qua (Dock như bình thường)", "Ignore (normal Dock)")
+        }
+    }
+
+    /// Chế độ thu nhỏ tương ứng (nil = theo cài đặt chung hoặc bỏ qua).
+    var clickMode: ClickMode? {
+        switch self {
+        case .minimizeAll:     return .minimizeAll
+        case .minimizeFocused: return .minimizeFocused
+        case .hide:            return .hide
+        case .useDefault, .ignore: return nil
+        }
+    }
+}
+
+/// Bấm chuột giữa vào icon trên Dock.
+enum MiddleClickAction: String, CaseIterable {
+    case off, newWindow, quit
+
+    var title: String {
+        switch self {
+        case .off:       return L("Tắt", "Off")
+        case .newWindow: return L("Mở cửa sổ mới", "Open a new window")
+        case .quit:      return L("Thoát app", "Quit the app")
+        }
+    }
+}
+
 enum GlassLook: String, CaseIterable {
     case system, clear, tinted
 
@@ -151,6 +190,22 @@ enum Prefs {
     static var lastUpdateCheck: Date? {
         get { d.object(forKey: "lastUpdateCheck") as? Date }
         set { d.set(newValue, forKey: "lastUpdateCheck") }
+    }
+
+    /// Cài đặt riêng theo app: [bundle id: AppRule.rawValue].
+    static var appRules: [String: String] {
+        get { d.dictionary(forKey: "appRules") as? [String: String] ?? [:] }
+        set { d.set(newValue, forKey: "appRules") }
+    }
+
+    static func rule(for bundleID: String?) -> AppRule {
+        guard let id = bundleID, let raw = appRules[id] else { return .useDefault }
+        return AppRule(rawValue: raw) ?? .useDefault
+    }
+
+    static var middleClick: MiddleClickAction {
+        get { MiddleClickAction(rawValue: d.string(forKey: "middleClick") ?? "") ?? .off }
+        set { d.set(newValue.rawValue, forKey: "middleClick") }
     }
 
     /// Đã xem cửa sổ hướng dẫn lần đầu chưa.
@@ -357,6 +412,22 @@ enum DockLog {
     }
 }
 
+// MARK: - Gửi phím
+
+enum Keys {
+    /// Gửi ⌘N tới một app cụ thể (mở cửa sổ mới). Cần quyền Accessibility.
+    static func sendCommandN(to pid: pid_t) {
+        let src = CGEventSource(stateID: .hidSystemState)
+        let nKey: CGKeyCode = 45
+        guard let down = CGEvent(keyboardEventSource: src, virtualKey: nKey, keyDown: true),
+              let up = CGEvent(keyboardEventSource: src, virtualKey: nKey, keyDown: false) else { return }
+        down.flags = .maskCommand
+        up.flags = .maskCommand
+        down.postToPid(pid)
+        up.postToPid(pid)
+    }
+}
+
 // MARK: - Bắt cú bấm trên Dock
 
 final class DockClicker {
@@ -377,12 +448,55 @@ final class DockClicker {
     private var lastAction = Date.distantPast
     private let tracker = FrontmostTracker()
 
+    private var middleDownMonitor: Any?
+    private var middleUpMonitor: Any?
+    private var middlePress: (point: CGPoint, app: NSRunningApplication)?
+
     func start() {
         downMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] e in
             self?.handleDown(e)
         }
         upMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseUp) { [weak self] e in
             self?.handleUp(e)
+        }
+        middleDownMonitor = NSEvent.addGlobalMonitorForEvents(matching: .otherMouseDown) { [weak self] e in
+            self?.handleMiddleDown(e)
+        }
+        middleUpMonitor = NSEvent.addGlobalMonitorForEvents(matching: .otherMouseUp) { [weak self] e in
+            self?.handleMiddleUp(e)
+        }
+    }
+
+    // MARK: Chuột giữa
+
+    private func handleMiddleDown(_ e: NSEvent) {
+        middlePress = nil
+        guard e.buttonNumber == 2, Prefs.enabled, Prefs.middleClick != .off, AXIsProcessTrusted(),
+              let point = e.cgEvent?.location,
+              let hit = DockHitTest.item(at: point),
+              let app = DockHitTest.runningApp(for: hit) else { return }
+        if Prefs.rule(for: app.bundleIdentifier) == .ignore { return }
+        middlePress = (point, app)
+    }
+
+    private func handleMiddleUp(_ e: NSEvent) {
+        guard e.buttonNumber == 2, let mp = middlePress else { return }
+        middlePress = nil
+        guard let up = e.cgEvent?.location, hypot(up.x - mp.point.x, up.y - mp.point.y) < 6 else { return }
+        let app = mp.app
+        switch Prefs.middleClick {
+        case .off:
+            return
+        case .newWindow:
+            DockLog.add("\(app.localizedName ?? "?") chuột giữa → mở cửa sổ mới")
+            app.activate(options: [.activateAllWindows])
+            // Gửi ⌘N cho đúng app đó sau khi nó lên trước.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                Keys.sendCommandN(to: app.processIdentifier)
+            }
+        case .quit:
+            DockLog.add("\(app.localizedName ?? "?") chuột giữa → thoát app")
+            app.terminate()   // app tự hỏi lưu nếu có tài liệu chưa lưu
         }
     }
 
@@ -397,6 +511,12 @@ final class DockClicker {
 
         guard let hit = DockHitTest.item(at: point),
               let app = DockHitTest.runningApp(for: hit) else { return }
+
+        // App được đặt "Bỏ qua": để Dock làm như bình thường.
+        if Prefs.rule(for: app.bundleIdentifier) == .ignore {
+            DockLog.add("\(app.localizedName ?? "?") → bỏ qua (cài đặt riêng của app)")
+            return
+        }
 
         let pid = app.processIdentifier
         let wins = AX.windows(of: pid)
@@ -449,9 +569,10 @@ final class DockClicker {
         if p.wasHidden { DockLog.add("  → để Dock hiện app"); return }
 
         if p.wasActive && !p.visible.isEmpty {
-            DockLog.add("  → thu nhỏ (\(Prefs.mode.rawValue))")
+            let mode = Prefs.rule(for: p.app.bundleIdentifier).clickMode ?? Prefs.mode
+            DockLog.add("  → thu nhỏ (\(mode.rawValue))")
             // App đang dùng, nằm trên cùng → thu nhỏ / ẩn.
-            switch Prefs.mode {
+            switch mode {
             case .hide:
                 p.app.hide()
             case .minimizeAll:
@@ -510,7 +631,8 @@ enum AppInfo {
     /// Thông tin gửi kèm khi báo lỗi. Không có gì cá nhân.
     static var diagnostics: String {
         "RinDock \(version) · \(macOS) · \(chip)\n"
-            + L("Chế độ", "Mode") + ": \(Prefs.mode.title)\n"
+            + L("Chế độ", "Mode") + ": \(Prefs.mode.title) · " + L("Tuỳ chỉnh theo app", "Per-app") + ": \(Prefs.appRules.count) · "
+            + L("Chuột giữa", "Middle-click") + ": \(Prefs.middleClick.rawValue)\n"
             + L("Đang bật", "Enabled") + ": \(Prefs.enabled ? L("Có", "Yes") : L("Không", "No")) · "
             + L("Quyền Accessibility", "Accessibility permission") + ": \(AXIsProcessTrusted() ? L("Có", "Yes") : L("Chưa", "Not yet"))"
     }
@@ -979,6 +1101,183 @@ struct BugReportView: View {
             }
         }
         .panelStyle()
+    }
+}
+
+// MARK: - Tuỳ chỉnh theo app
+
+struct AppRuleRow: Identifiable, Equatable {
+    let id: String          // bundle id
+    let name: String
+    var rule: AppRule
+}
+
+enum AppLookup {
+    static func url(for bundleID: String) -> URL? {
+        NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)
+    }
+
+    static func name(for bundleID: String) -> String {
+        if let url = url(for: bundleID) {
+            return FileManager.default.displayName(atPath: url.path).replacingOccurrences(of: ".app", with: "")
+        }
+        return bundleID
+    }
+
+    static func icon(for bundleID: String) -> NSImage {
+        if let url = url(for: bundleID) { return NSWorkspace.shared.icon(forFile: url.path) }
+        return NSWorkspace.shared.icon(for: .applicationBundle)
+    }
+}
+
+struct AppRulesView: View {
+    @State private var rows: [AppRuleRow] = AppRulesView.load()
+
+    static func load() -> [AppRuleRow] {
+        Prefs.appRules.compactMap { id, raw in
+            guard let rule = AppRule(rawValue: raw), rule != .useDefault else { return nil }
+            return AppRuleRow(id: id, name: AppLookup.name(for: id), rule: rule)
+        }
+        .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private func save() {
+        var dict: [String: String] = [:]
+        for r in rows where r.rule != .useDefault { dict[r.id] = r.rule.rawValue }
+        Prefs.appRules = dict
+    }
+
+    private var runningCandidates: [NSRunningApplication] {
+        let taken = Set(rows.map(\.id))
+        let me = Bundle.main.bundleIdentifier
+        return NSWorkspace.shared.runningApplications
+            .filter { $0.activationPolicy == .regular }
+            .filter { guard let id = $0.bundleIdentifier else { return false }; return id != me && !taken.contains(id) }
+            .sorted { ($0.localizedName ?? "").localizedCaseInsensitiveCompare($1.localizedName ?? "") == .orderedAscending }
+    }
+
+    private func add(_ bundleID: String) {
+        guard !rows.contains(where: { $0.id == bundleID }) else { return }
+        rows.append(AppRuleRow(id: bundleID, name: AppLookup.name(for: bundleID), rule: .ignore))
+        save()
+    }
+
+    private func pickFromApplications() {
+        let panel = NSOpenPanel()
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.allowedContentTypes = [.applicationBundle]
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        NSApp.activate(ignoringOtherApps: true)
+        if panel.runModal() == .OK {
+            for url in panel.urls {
+                if let id = Bundle(url: url)?.bundleIdentifier { add(id) }
+            }
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "slider.horizontal.3")
+                .font(.system(size: 30, weight: .semibold))
+                .foregroundStyle(.white)
+                .shadow(color: Color.cyan.opacity(0.6), radius: 12)
+
+            Text(L("Tuỳ chỉnh theo app", "Per-app settings"))
+                .font(.system(size: 22, weight: .bold, design: .rounded))
+
+            Text(L("Chọn riêng cách RinDock xử lý từng app. Ví dụ: Finder bỏ qua, Safari thu nhỏ, Zalo ẩn.",
+                   "Choose how RinDock handles each app. For example: ignore Finder, minimize Safari, hide chat apps."))
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+
+            VStack(spacing: 0) {
+                if rows.isEmpty {
+                    Text(L("Chưa có app nào. Mọi app đang theo cài đặt chung.", "No apps yet. Every app follows the general setting."))
+                        .noteText()
+                        .multilineTextAlignment(.center)
+                        .padding(.vertical, 18)
+                        .frame(maxWidth: .infinity)
+                } else {
+                    ScrollView {
+                        VStack(spacing: 8) {
+                            ForEach($rows) { $row in
+                                HStack(spacing: 10) {
+                                    Image(nsImage: AppLookup.icon(for: row.id))
+                                        .resizable()
+                                        .frame(width: 26, height: 26)
+                                    Text(row.name)
+                                        .font(.system(size: 13, weight: .medium))
+                                        .lineLimit(1)
+                                    Spacer(minLength: 6)
+                                    Picker("", selection: $row.rule) {
+                                        ForEach(AppRule.allCases.filter { $0 != .useDefault }, id: \.self) { r in
+                                            Text(r.title).tag(r)
+                                        }
+                                    }
+                                    .labelsHidden()
+                                    .pickerStyle(.menu)
+                                    .frame(width: 170)
+                                    .onChange(of: row.rule) { _ in save() }
+                                    Button {
+                                        rows.removeAll { $0.id == row.id }
+                                        save()
+                                    } label: {
+                                        Image(systemName: "minus.circle.fill")
+                                            .font(.system(size: 15))
+                                            .foregroundStyle(Color.white.opacity(0.75))
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help(L("Xoá, app này theo lại cài đặt chung", "Remove; this app follows the general setting again"))
+                                }
+                            }
+                        }
+                        .padding(12)
+                    }
+                    .frame(maxHeight: 260)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .softCard(cornerRadius: 16)
+
+            GlassGroup(spacing: 10) {
+                HStack(spacing: 10) {
+                    Menu {
+                        ForEach(runningCandidates, id: \.processIdentifier) { app in
+                            Button(app.localizedName ?? app.bundleIdentifier ?? "?") {
+                                if let id = app.bundleIdentifier { add(id) }
+                            }
+                        }
+                        if !runningCandidates.isEmpty { Divider() }
+                        Button(L("Chọn trong thư mục Applications…", "Choose from Applications…")) { pickFromApplications() }
+                    } label: {
+                        Label(L("Thêm app", "Add app"), systemImage: "plus")
+                            .font(.system(size: 13, weight: .semibold))
+                            .frame(maxWidth: .infinity)
+                    }
+                    .menuStyle(.button)
+                    .glassButton(prominent: true)
+
+                    Button {
+                        NSApp.keyWindow?.close()
+                    } label: {
+                        Text(L("Xong", "Done"))
+                            .font(.system(size: 13, weight: .semibold))
+                            .frame(maxWidth: .infinity)
+                    }
+                    .glassButton()
+                }
+                .controlSize(.large)
+            }
+
+            Text(L("App không có trong danh sách sẽ theo cài đặt chung ở menu RinDock.",
+                   "Apps not listed follow the general setting in the RinDock menu."))
+                .noteText()
+                .multilineTextAlignment(.center)
+        }
+        .panelStyle(width: 420)
     }
 }
 
@@ -1706,6 +2005,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let aboutPanel = Panel { AnyView(AboutView()) }
     private let bugPanel = Panel { AnyView(BugReportView()) }
     private let appearancePanel = Panel { AnyView(AppearanceView()) }
+    private let rulesPanel = Panel { AnyView(AppRulesView()) }
     private lazy var onboardingPanel: Panel = {
         Panel { [weak self] in
             AnyView(OnboardingView(onDone: { self?.finishOnboarding() }))
@@ -1766,6 +2066,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         onboardingPanel.show()
     }
 
+    @objc private func openRules() {
+        rulesPanel.show()
+    }
+
+    @objc private func chooseMiddleClick(_ sender: NSMenuItem) {
+        if let raw = sender.representedObject as? String, let a = MiddleClickAction(rawValue: raw) {
+            Prefs.middleClick = a
+        }
+    }
+
     @objc private func openAppearance() {
         appearancePanel.show()
     }
@@ -1813,6 +2123,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             it.indentationLevel = 1
             menu.addItem(it)
         }
+        let rulesCount = Prefs.appRules.count
+        menu.addItem(item(rulesCount > 0
+                          ? L("Tuỳ chỉnh theo app (\(rulesCount))…", "Per-App Settings (\(rulesCount))…")
+                          : L("Tuỳ chỉnh theo app…", "Per-App Settings…"),
+                          #selector(openRules)))
+
+        let midItem = NSMenuItem(title: L("Bấm chuột giữa vào Dock", "Middle-click on Dock"), action: nil, keyEquivalent: "")
+        let midMenu = NSMenu()
+        for a in MiddleClickAction.allCases {
+            let it = item(a.title, #selector(chooseMiddleClick(_:)))
+            it.representedObject = a.rawValue
+            it.state = Prefs.middleClick == a ? .on : .off
+            midMenu.addItem(it)
+        }
+        midItem.submenu = midMenu
+        menu.addItem(midItem)
         menu.addItem(.separator())
 
         let login = item(L("Mở cùng máy", "Open at login"), #selector(toggleLogin))
@@ -1953,7 +2279,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard let raw = sender.representedObject as? String, let lang = AppLanguage(rawValue: raw) else { return }
         Prefs.language = lang
         // Cửa sổ nào đang mở thì vẽ lại ngay bằng ngôn ngữ mới.
-        for panel in [supportPanel, aboutPanel, bugPanel, updatePanel, appearancePanel, onboardingPanel] {
+        for panel in [supportPanel, aboutPanel, bugPanel, updatePanel, appearancePanel, onboardingPanel, rulesPanel] {
             panel.reloadIfVisible()
         }
         updateIcon()

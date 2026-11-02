@@ -24,6 +24,10 @@ Trong menu RinDock trên thanh menu có 3 chế độ:
 - **Chỉ thu nhỏ cửa sổ đang dùng**
 - **Ẩn app**: nhanh, không có hiệu ứng thu nhỏ
 
+**Tuỳ chỉnh theo app:** icon RinDock → **Tuỳ chỉnh theo app…** → **Thêm app**, chọn riêng cho từng app: thu nhỏ tất cả, chỉ thu nhỏ cửa sổ đang dùng, ẩn app, hoặc **Bỏ qua** (Dock như bình thường). Ví dụ Finder bỏ qua, Safari thu nhỏ, Zalo ẩn.
+
+**Bấm chuột giữa vào Dock** (chuột có nút giữa): icon RinDock → **Bấm chuột giữa vào Dock** → **Mở cửa sổ mới** (giống Windows) hoặc **Thoát app**. Mặc định tắt.
+
 Mẹo:
 
 - Giữ **Command, Option, Control hoặc Shift** khi bấm thì Dock làm như bình thường.
@@ -182,7 +186,7 @@ cd RinDock
 
 **Bug reports:** menu bar icon → **Report a Bug…** (email or GitHub issue, prefilled with app version, macOS version and chip).
 
-**Modes (menu bar):** minimize all windows (default), minimize the focused window, or hide the app. Hold ⌘, ⌥, ⌃ or ⇧ while clicking to get the normal Dock behavior.
+**Modes (menu bar):** minimize all windows (default), minimize the focused window, or hide the app. **Per-App Settings** lets you pick a different behavior (or ignore) for each app. **Middle-click on Dock** can open a new window or quit the app (off by default). Hold ⌘, ⌥, ⌃ or ⇧ while clicking to get the normal Dock behavior.
 
 **Support the author:** RinDock is free. You can support me from the app (menu bar icon → **♥ Support the Author…**) or via [PayPal.me/phuocrin](https://paypal.me/phuocrin). A ⭐ on the repo helps too.
 
