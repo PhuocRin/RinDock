@@ -92,15 +92,17 @@ Icon RinDock trên thanh menu sáng lên là đã chạy.
 
 ## Cập nhật
 
-RinDock tự kiểm tra bản mới mỗi ngày. Có bản mới thì icon trên thanh menu đổi thành icon có mũi tên, và menu hiện dòng **⬆︎ Có bản mới**. Bấm vào, tải file `.dmg`, kéo RinDock vào Applications để thay bản cũ.
+RinDock tự kiểm tra bản mới (mặc định mỗi ngày). Có bản mới thì icon trên thanh menu đổi thành icon có mũi tên, và menu hiện dòng **⬆︎ Có bản mới**. Bấm vào, tải file `.dmg`, kéo RinDock vào Applications để thay bản cũ.
 
-Muốn kiểm tra ngay: bấm icon RinDock → **Kiểm tra cập nhật…**. Muốn tắt tự kiểm tra: bỏ tick **Tự kiểm tra cập nhật**.
+Muốn kiểm tra ngay: bấm icon RinDock → **Kiểm tra cập nhật…**.
+
+Muốn đổi tần suất: bấm icon RinDock → **Tự kiểm tra cập nhật** → chọn **Mỗi ngày**, **Mỗi tuần** hoặc **Tắt**. Cũng chọn được ngay trong cửa sổ Kiểm tra cập nhật.
 
 ## RinDock có an toàn không?
 
 - RinDock **không** chụp màn hình, **không** ghi lại thao tác bàn phím.
 - Quyền Accessibility chỉ dùng để đọc icon Dock dưới con trỏ và thu nhỏ / hiện cửa sổ.
-- Kết nối mạng duy nhất: hỏi GitHub xem có bản mới không (tối đa mỗi ngày một lần, tắt được trong menu). Không gửi thông tin gì của bạn.
+- Kết nối mạng duy nhất: hỏi GitHub xem có bản mới không (mỗi ngày hoặc mỗi tuần một lần, tắt được trong menu). Không gửi thông tin gì của bạn.
 - Khi bạn bấm **Báo lỗi**, app chỉ mở email hoặc GitHub có điền sẵn phiên bản app, macOS và loại chip. Bạn xem được hết trước khi gửi, không gửi thì không có gì đi đâu cả.
 - Toàn bộ mã nguồn nằm trong một file: [`Sources/main.swift`](Sources/main.swift). Bạn có thể đọc trước khi cài.
 
@@ -149,7 +151,7 @@ cd RinDock
 ./build.sh install
 ```
 
-**Permission:** grant Accessibility in **System Settings → Privacy & Security → Accessibility**. RinDock uses it only to detect Dock clicks and minimize or restore windows. No screen recording, no keylogging. The only network request is a daily check with GitHub for a new version (can be turned off in the menu); nothing about you is sent.
+**Permission:** grant Accessibility in **System Settings → Privacy & Security → Accessibility**. RinDock uses it only to detect Dock clicks and minimize or restore windows. No screen recording, no keylogging. The only network request is a check with GitHub for a new version (daily, weekly or off, set in the menu); nothing about you is sent.
 
 **Updates & bug reports:** menu bar icon → **Kiểm tra cập nhật…** / **Báo lỗi…** (email or GitHub issue, prefilled with app version, macOS version and chip).
 

@@ -20,6 +20,27 @@ enum ClickMode: String, CaseIterable {
     }
 }
 
+enum UpdateFrequency: String, CaseIterable {
+    case daily, weekly, off
+
+    var title: String {
+        switch self {
+        case .daily:  return "Mỗi ngày"
+        case .weekly: return "Mỗi tuần"
+        case .off:    return "Tắt"
+        }
+    }
+
+    /// Khoảng cách tối thiểu giữa hai lần tự kiểm tra.
+    var interval: TimeInterval? {
+        switch self {
+        case .daily:  return 20 * 3600
+        case .weekly: return 6.5 * 24 * 3600
+        case .off:    return nil
+        }
+    }
+}
+
 enum Prefs {
     private static let d = UserDefaults.standard
 
@@ -33,10 +54,19 @@ enum Prefs {
         set { d.set(newValue.rawValue, forKey: "mode") }
     }
 
-    /// Tự hỏi GitHub có bản mới không (tối đa mỗi ngày một lần). Mặc định bật.
-    static var autoUpdate: Bool {
-        get { d.object(forKey: "autoUpdate") as? Bool ?? true }
-        set { d.set(newValue, forKey: "autoUpdate") }
+    /// Tần suất tự hỏi GitHub có bản mới không. Mặc định mỗi ngày.
+    static var updateFrequency: UpdateFrequency {
+        get { UpdateFrequency(rawValue: d.string(forKey: "updateFrequency") ?? "") ?? .daily }
+        set { d.set(newValue.rawValue, forKey: "updateFrequency") }
+    }
+
+    /// Chuyển cài đặt cũ (bật/tắt) sang tần suất.
+    static func migrate() {
+        if d.string(forKey: "updateFrequency") == nil {
+            let oldOn = d.object(forKey: "autoUpdate") as? Bool ?? true
+            updateFrequency = oldOn ? .daily : .off
+        }
+        d.removeObject(forKey: "autoUpdate")
     }
 
     static var lastUpdateCheck: Date? {
@@ -712,10 +742,10 @@ final class Updater: ObservableObject {
         return nil
     }
 
-    /// Kiểm tra nền: chỉ khi đang bật và lần trước đã quá 20 tiếng.
+    /// Kiểm tra nền theo tần suất người dùng chọn (mỗi ngày / mỗi tuần / tắt).
     func checkIfDue() {
-        guard Prefs.autoUpdate else { return }
-        if let last = Prefs.lastUpdateCheck, Date().timeIntervalSince(last) < 20 * 3600 { return }
+        guard let interval = Prefs.updateFrequency.interval else { return }
+        if let last = Prefs.lastUpdateCheck, Date().timeIntervalSince(last) < interval { return }
         check()
     }
 
@@ -760,7 +790,7 @@ final class Updater: ObservableObject {
 
 struct UpdateView: View {
     @ObservedObject var updater: Updater
-    @AppStorage("autoUpdate") private var autoUpdate = true
+    @AppStorage("updateFrequency") private var frequency: UpdateFrequency = .daily
 
     var body: some View {
         VStack(spacing: 14) {
@@ -826,10 +856,19 @@ struct UpdateView: View {
                     .multilineTextAlignment(.center)
             }
 
-            VStack(spacing: 6) {
-                Toggle("Tự kiểm tra cập nhật mỗi ngày", isOn: $autoUpdate)
-                    .font(.system(size: 12, weight: .medium))
-                Text("RinDock chỉ hỏi GitHub có bản mới không, không gửi thông tin gì của bạn.")
+            VStack(spacing: 8) {
+                Text("Tự kiểm tra cập nhật")
+                    .font(.system(size: 12, weight: .semibold))
+                Picker("Tự kiểm tra cập nhật", selection: $frequency) {
+                    ForEach(UpdateFrequency.allCases, id: \.self) { f in
+                        Text(f.title).tag(f)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                Text(frequency == .off
+                     ? "Đã tắt. Bạn vẫn kiểm tra được bất cứ lúc nào bằng Kiểm tra cập nhật… trong menu."
+                     : "RinDock chỉ hỏi GitHub có bản mới không, không gửi thông tin gì của bạn.")
                     .noteText()
                     .multilineTextAlignment(.center)
             }
@@ -876,6 +915,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                               userInfo: nil, repeats: true)
         }
 
+        Prefs.migrate()
         updater.onChange = { [weak self] in self?.updateIcon() }
         updater.checkIfDue()
         updateTimer = Timer.scheduledTimer(timeInterval: 6 * 3600, target: self,
@@ -932,8 +972,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(.separator())
 
         menu.addItem(item("Kiểm tra cập nhật…", #selector(checkForUpdates)))
-        let auto = item("Tự kiểm tra cập nhật", #selector(toggleAutoUpdate))
-        auto.state = Prefs.autoUpdate ? .on : .off
+        let auto = NSMenuItem(title: "Tự kiểm tra cập nhật", action: nil, keyEquivalent: "")
+        let sub = NSMenu()
+        for f in UpdateFrequency.allCases {
+            let it = item(f.title, #selector(chooseUpdateFrequency(_:)))
+            it.representedObject = f.rawValue
+            it.state = Prefs.updateFrequency == f ? .on : .off
+            sub.addItem(it)
+        }
+        auto.submenu = sub
         menu.addItem(auto)
         menu.addItem(.separator())
 
@@ -1015,9 +1062,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         updatePanel.show()
     }
 
-    @objc private func toggleAutoUpdate() {
-        Prefs.autoUpdate.toggle()
-        if Prefs.autoUpdate { updater.checkIfDue() }
+    @objc private func chooseUpdateFrequency(_ sender: NSMenuItem) {
+        if let raw = sender.representedObject as? String, let f = UpdateFrequency(rawValue: raw) {
+            Prefs.updateFrequency = f
+            updater.checkIfDue()
+        }
     }
 
     @objc private func openAbout() {
