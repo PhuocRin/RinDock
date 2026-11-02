@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/AppIcon.png" width="160" alt="RinDock"></p>
+
 # RinDock
 
 Bấm icon app trên Dock để **thu nhỏ**, bấm lại để **hiện lên**, giống taskbar trên Windows.

@@ -33,6 +33,8 @@ done
 lipo -create build/obj/RinDock-arm64 build/obj/RinDock-x86_64 -output "$APP/Contents/MacOS/RinDock"
 
 cp Info.plist "$APP/Contents/Info.plist"
+# Icon app.
+iconutil -c icns assets/AppIcon.iconset -o "$APP/Contents/Resources/AppIcon.icns"
 # Ảnh QR ủng hộ (nếu có) đóng gói vào app.
 if [[ -f assets/donate-qr.png ]]; then
   cp assets/donate-qr.png "$APP/Contents/Resources/donate-qr.png"

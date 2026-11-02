@@ -9,6 +9,11 @@ format = "UDZO"
 filesystem = "HFS+"
 
 files = [app]
+
+# Ổ đĩa khi mở .dmg cũng mang icon RinDock.
+_icns = os.path.join(app, "Contents", "Resources", "AppIcon.icns")
+if os.path.exists(_icns):
+    icon = _icns
 symlinks = {"Applications": "/Applications"}
 
 # Nền kính mờ; dmgbuild tự ghép bản @2x cho màn hình Retina.
