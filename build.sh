@@ -27,7 +27,7 @@ for ARCH in arm64 x86_64; do
     -target "$ARCH-apple-macos13.0" \
     Sources/main.swift \
     -o "build/obj/RinDock-$ARCH" \
-    -swift-version 5 \
+    -swift-version 5 -parse-as-library \
     -framework Cocoa -framework ApplicationServices -framework ServiceManagement -framework SwiftUI
 done
 lipo -create build/obj/RinDock-arm64 build/obj/RinDock-x86_64 -output "$APP/Contents/MacOS/RinDock"

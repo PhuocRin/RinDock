@@ -466,8 +466,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
 // MARK: - Khởi chạy
 
-let application = NSApplication.shared
-let appDelegate = AppDelegate()
-application.delegate = appDelegate
-application.setActivationPolicy(.accessory)
-application.run()
+@main
+struct RinDockApp {
+    @MainActor
+    static func main() {
+        let application = NSApplication.shared
+        let appDelegate = AppDelegate()
+        application.delegate = appDelegate
+        application.setActivationPolicy(.accessory)
+        withExtendedLifetime(appDelegate) {
+            application.run()
+        }
+    }
+}
