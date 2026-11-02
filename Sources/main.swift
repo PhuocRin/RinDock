@@ -6,6 +6,7 @@ import ApplicationServices
 import ServiceManagement
 import SwiftUI
 import CryptoKit
+import Combine
 import Security
 
 // MARK: - Cài đặt
@@ -93,6 +94,27 @@ enum UpdateMode: String, CaseIterable {
     }
 }
 
+enum GlassLook: String, CaseIterable {
+    case system, clear, tinted
+
+    var title: String {
+        switch self {
+        case .system: return L("Theo hệ thống", "System")
+        case .clear:  return L("Trong", "Clear")
+        case .tinted: return L("Mờ", "Tinted")
+        }
+    }
+
+    var note: String {
+        switch self {
+        case .system: return L("Theo cài đặt Liquid Glass của macOS (System Settings → Appearance). Đổi ở đó là RinDock đổi theo.",
+                               "Follows macOS's Liquid Glass setting (System Settings → Appearance).")
+        case .clear:  return L("Kính trong hơn, thấy rõ nền phía sau.", "Clearer glass that shows more of what's behind it.")
+        case .tinted: return L("Kính đục hơn, chữ trên nút dễ đọc hơn.", "More opaque glass with easier-to-read buttons.")
+        }
+    }
+}
+
 enum Prefs {
     private static let d = UserDefaults.standard
 
@@ -129,6 +151,12 @@ enum Prefs {
     static var lastUpdateCheck: Date? {
         get { d.object(forKey: "lastUpdateCheck") as? Date }
         set { d.set(newValue, forKey: "lastUpdateCheck") }
+    }
+
+    /// Đã xem cửa sổ hướng dẫn lần đầu chưa.
+    static var onboarded: Bool {
+        get { d.bool(forKey: "onboarded") }
+        set { d.set(newValue, forKey: "onboarded") }
     }
 
     /// Có bản mới thì làm gì. Mặc định hỏi trước.
@@ -277,35 +305,55 @@ final class FrontmostTracker {
 
 /// Đọc thứ tự cửa sổ trên màn hình (từ trên xuống), không cần quyền ghi màn hình.
 enum WindowStack {
-    /// Cửa sổ trên cùng của app có đang bị cửa sổ app khác đè lên không.
+    /// Cửa sổ trên cùng của app có đang bị cửa sổ THƯỜNG của một app THƯỜNG khác đè quá nửa không.
+    /// Bỏ qua cửa sổ nổi, lớp phủ trong suốt của app thanh menu, Dock, thông báo…
     static func isCovered(pid: pid_t) -> Bool {
         let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
         guard let list = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else { return false }
-        let me = ProcessInfo.processInfo.processIdentifier
+        let regular = Set(NSWorkspace.shared.runningApplications
+            .filter { $0.activationPolicy == .regular }
+            .map { $0.processIdentifier })
         var above: [CGRect] = []
 
         for w in list {
-            let layer = (w[kCGWindowLayer as String] as? NSNumber)?.intValue ?? -1
-            guard layer >= 0, layer < 25 else { continue }   // bỏ thanh menu, Dock, thông báo…
-            guard let owner = (w[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value,
+            guard (w[kCGWindowLayer as String] as? NSNumber)?.intValue == 0,
+                  let owner = (w[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value,
                   let dict = w[kCGWindowBounds as String] as? NSDictionary,
                   let rect = CGRect(dictionaryRepresentation: dict as CFDictionary),
-                  rect.width > 60, rect.height > 60 else { continue }
+                  rect.width > 100, rect.height > 100 else { continue }
             let alpha = (w[kCGWindowAlpha as String] as? NSNumber)?.doubleValue ?? 1
-            if alpha < 0.1 || owner == me { continue }
+            if alpha < 0.5 { continue }
 
             if owner == pid {
-                guard layer == 0 else { continue }
                 let area = rect.width * rect.height
                 for r in above {
                     let overlap = rect.intersection(r)
-                    if !overlap.isNull, overlap.width * overlap.height > area * 0.2 { return true }
+                    if !overlap.isNull, overlap.width * overlap.height > area * 0.5 { return true }
                 }
                 return false
             }
-            above.append(rect)
+            if regular.contains(owner) { above.append(rect) }
         }
         return false
+    }
+}
+
+/// Nhật ký 30 lần bấm Dock gần nhất (chỉ trong bộ nhớ, mất khi thoát app). Dùng khi báo lỗi.
+enum DockLog {
+    private(set) static var lines: [String] = []
+    private static let fmt: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm:ss"
+        return f
+    }()
+
+    static func add(_ text: String) {
+        lines.append(fmt.string(from: Date()) + " " + text)
+        if lines.count > 30 { lines.removeFirst(lines.count - 30) }
+    }
+
+    static var text: String {
+        lines.isEmpty ? L("(chưa có lần bấm nào)", "(no clicks yet)") : lines.joined(separator: "\n")
     }
 }
 
@@ -357,7 +405,11 @@ final class DockClicker {
 
         // "Đang dùng" = là app trên cùng ĐÚNG lúc nhấn chuột, và cửa sổ không bị app khác đè lên.
         let frontAtPress = tracker.frontmost(at: e.timestamp) == pid
-        let active = frontAtPress && !WindowStack.isCovered(pid: pid)
+        let covered = frontAtPress && WindowStack.isCovered(pid: pid)
+        let active = frontAtPress && !covered
+        let visibleCount = wins.filter { !AX.isMinimized($0) }.count
+        DockLog.add("\(app.localizedName ?? "?") front=\(frontAtPress) covered=\(covered) "
+                    + "visible=\(visibleCount) min=\(wins.count - visibleCount) hidden=\(app.isHidden)")
 
         press = Press(
             point: point,
@@ -381,7 +433,10 @@ final class DockClicker {
               Date().timeIntervalSince(p.time) < 0.6 else { return }
 
         // Chống bấm đúp làm thu nhỏ rồi hiện lại liền.
-        guard Date().timeIntervalSince(lastAction) > 0.35 else { return }
+        guard Date().timeIntervalSince(lastAction) > 0.35 else {
+            DockLog.add("  → bỏ qua (bấm quá nhanh)")
+            return
+        }
 
         // Đợi Dock làm xong phần của nó rồi mới ra tay.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
@@ -391,9 +446,10 @@ final class DockClicker {
 
     private func act(on p: Press) {
         // App đang bị ẩn: Dock tự hiện lại, không cần làm gì.
-        if p.wasHidden { return }
+        if p.wasHidden { DockLog.add("  → để Dock hiện app"); return }
 
         if p.wasActive && !p.visible.isEmpty {
+            DockLog.add("  → thu nhỏ (\(Prefs.mode.rawValue))")
             // App đang dùng, nằm trên cùng → thu nhỏ / ẩn.
             switch Prefs.mode {
             case .hide:
@@ -406,6 +462,7 @@ final class DockClicker {
             lastAction = Date()
         } else if p.visible.isEmpty && !p.minimized.isEmpty {
             // Mọi cửa sổ đang thu nhỏ → hiện lại hết (Dock mặc định chỉ hiện một cái).
+            DockLog.add("  → hiện lại \(p.minimized.count) cửa sổ")
             p.minimized.forEach { AX.setMinimized($0, false) }
             if let last = p.minimized.last {
                 AXUIElementPerformAction(last, kAXRaiseAction as CFString)
@@ -414,6 +471,7 @@ final class DockClicker {
             lastAction = Date()
         } else if !p.visible.isEmpty {
             // App nằm dưới app khác → đưa cửa sổ của nó lên trên (giống Windows), không thu nhỏ.
+            DockLog.add("  → đưa lên trên")
             if let top = p.focused ?? p.visible.first {
                 AXUIElementPerformAction(top, kAXRaiseAction as CFString)
             }
@@ -483,6 +541,33 @@ struct PanelBackdrop: View {
     }
 }
 
+/// Lớp làm mờ màn hình phía sau cửa sổ.
+struct BehindWindowBlur: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let v = NSVisualEffectView()
+        v.material = .hudWindow
+        v.blendingMode = .behindWindow
+        v.state = .active
+        return v
+    }
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
+}
+
+/// Nền cửa sổ: màn hình phía sau được làm mờ + lớp gradient, độ đậm chỉnh trong Giao diện kính.
+struct PanelBackground: View {
+    @AppStorage("backdropOpacity") private var opacity: Double = 0.85
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    var body: some View {
+        ZStack {
+            BehindWindowBlur()
+            PanelBackdrop()
+                .opacity(reduceTransparency ? 1 : opacity)
+        }
+        .ignoresSafeArea()
+    }
+}
+
 extension View {
     /// Khung chung cho mọi cửa sổ: nền gradient, chữ sáng.
     func panelStyle(width: CGFloat = 340) -> some View {
@@ -491,7 +576,7 @@ extension View {
             .padding(.top, 40)
             .padding(.bottom, 26)
             .frame(width: width)
-            .background { PanelBackdrop() }
+            .background { PanelBackground() }
             .environment(\.colorScheme, .dark)
     }
 
@@ -524,6 +609,7 @@ extension View {
 
 struct GlassButton: ViewModifier {
     let prominent: Bool
+    @AppStorage("glassLook") private var look: GlassLook = .system
     private let deep = Color(red: 0.16, green: 0.12, blue: 0.48)
 
     @ViewBuilder
@@ -533,7 +619,7 @@ struct GlassButton: ViewModifier {
             if prominent {
                 content.buttonStyle(.glassProminent).tint(deep)
             } else {
-                content.buttonStyle(.glass)
+                styled(content)
             }
         } else {
             fallback(content)
@@ -542,6 +628,23 @@ struct GlassButton: ViewModifier {
         fallback(content)
         #endif
     }
+
+    #if compiler(>=6.2)
+    /// Kiểu kính Trong / Mờ cần macOS 26.1; "Theo hệ thống" dùng kính mặc định để macOS tự áp cài đặt của người dùng.
+    @available(macOS 26.0, *)
+    @ViewBuilder
+    private func styled(_ content: Content) -> some View {
+        if #available(macOS 26.1, *) {
+            switch look {
+            case .system: content.buttonStyle(.glass)
+            case .clear:  content.buttonStyle(.glass(.clear))
+            case .tinted: content.buttonStyle(.glass(.regular.tint(Color.white.opacity(0.22))))
+            }
+        } else {
+            content.buttonStyle(.glass)
+        }
+    }
+    #endif
 
     @ViewBuilder
     private func fallback(_ content: Content) -> some View {
@@ -594,6 +697,10 @@ final class Panel {
         self.content = content
     }
 
+    func close() {
+        window?.close()
+    }
+
     func reloadIfVisible() {
         if window?.isVisible == true { show() }
     }
@@ -611,6 +718,8 @@ final class Panel {
             w.titleVisibility = .hidden
             w.isMovableByWindowBackground = true
             w.isReleasedWhenClosed = false
+            w.isOpaque = false
+            w.backgroundColor = .clear
             w.appearance = NSAppearance(named: .darkAqua)
             w.standardWindowButton(.miniaturizeButton)?.isHidden = true
             w.standardWindowButton(.zoomButton)?.isHidden = true
@@ -773,6 +882,7 @@ enum BugReport {
             + L("Các bước để gặp lỗi:", "Steps to reproduce:") + "\n1. \n2. \n\n"
             + L("App bị ảnh hưởng (nếu có):", "Affected app (if any):") + "\n\n"
             + "---\n" + AppInfo.diagnostics
+            + "\n\n" + L("Nhật ký bấm Dock:", "Dock click log:") + "\n" + DockLog.text
     }
 
     static var emailURL: URL? {
@@ -824,7 +934,8 @@ struct BugReportView: View {
                     .foregroundStyle(Color.white.opacity(0.85))
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
-                Text(L("Chỉ gồm phiên bản app, macOS và loại chip. Không có thông tin cá nhân.", "Only the app version, macOS version and chip. No personal information."))
+                Text(L("Gồm phiên bản app, macOS, loại chip và nhật ký 30 lần bấm Dock gần nhất (tên app được bấm). Không có thông tin cá nhân nào khác.",
+                       "App version, macOS version, chip and a log of the last 30 Dock clicks (names of clicked apps). No other personal information."))
                     .noteText()
                     .padding(.top, 2)
             }
@@ -855,10 +966,10 @@ struct BugReportView: View {
 
                         Button {
                             NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(info, forType: .string)
+                            NSPasteboard.general.setString(info + "\n\n" + DockLog.text, forType: .string)
                             copied = true
                         } label: {
-                            Text(copied ? L("Đã sao chép", "Copied") : L("Sao chép thông tin", "Copy info")).frame(maxWidth: .infinity)
+                            Text(copied ? L("Đã sao chép", "Copied") : L("Sao chép kèm nhật ký", "Copy with log")).frame(maxWidth: .infinity)
                         }
                         .glassButton()
                     }
@@ -868,6 +979,231 @@ struct BugReportView: View {
             }
         }
         .panelStyle()
+    }
+}
+
+// MARK: - Giao diện kính
+
+struct AppearanceView: View {
+    @AppStorage("glassLook") private var look: GlassLook = .system
+    @AppStorage("backdropOpacity") private var opacity: Double = 0.85
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    private var supportsGlassStyles: Bool {
+        ProcessInfo.processInfo.isOperatingSystemAtLeast(OperatingSystemVersion(majorVersion: 26, minorVersion: 1, patchVersion: 0))
+    }
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "drop.halffull")
+                .font(.system(size: 32, weight: .semibold))
+                .foregroundStyle(.white)
+                .shadow(color: Color.cyan.opacity(0.6), radius: 12)
+
+            Text(L("Giao diện kính", "Glass appearance"))
+                .font(.system(size: 22, weight: .bold, design: .rounded))
+
+            Text(L("Áp dụng cho các cửa sổ của RinDock, đổi là thấy ngay.", "Applies to RinDock's windows and updates instantly."))
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text(L("Kiểu kính", "Glass style"))
+                    .font(.system(size: 12, weight: .semibold))
+                Picker(L("Kiểu kính", "Glass style"), selection: $look) {
+                    ForEach(GlassLook.allCases, id: \.self) { g in
+                        Text(g.title).tag(g)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .disabled(!supportsGlassStyles)
+                Text(supportsGlassStyles ? look.note
+                     : L("Cần macOS 26.1 trở lên để đổi kiểu kính.", "Changing the glass style needs macOS 26.1 or later."))
+                    .noteText()
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .softCard(cornerRadius: 16)
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text(L("Độ đậm của nền", "Background tint"))
+                        .font(.system(size: 12, weight: .semibold))
+                    Spacer()
+                    Text("\(Int((opacity * 100).rounded()))%")
+                        .font(.system(size: 12, weight: .medium).monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+                Slider(value: $opacity, in: 0.3...1.0) {
+                    Text(L("Độ đậm của nền", "Background tint"))
+                } minimumValueLabel: {
+                    Text(L("Trong", "Clear")).font(.system(size: 11))
+                } maximumValueLabel: {
+                    Text(L("Đậm", "Solid")).font(.system(size: 11))
+                }
+                .labelsHidden()
+                .disabled(reduceTransparency)
+                Text(reduceTransparency
+                     ? L("Máy đang bật Giảm độ trong suốt (Reduce Transparency) nên nền luôn đậm.",
+                         "Reduce Transparency is on, so the background stays solid.")
+                     : L("Kéo về Trong để nhìn xuyên ra màn hình phía sau.", "Drag toward Clear to see more of the screen behind."))
+                    .noteText()
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .softCard(cornerRadius: 16)
+
+            GlassGroup(spacing: 10) {
+                HStack(spacing: 10) {
+                    Button {
+                        look = .system
+                        opacity = 0.85
+                    } label: {
+                        Text(L("Đặt lại", "Reset")).frame(maxWidth: .infinity)
+                    }
+                    .glassButton()
+
+                    Button {
+                        NSApp.keyWindow?.close()
+                    } label: {
+                        Text(L("Xong", "Done")).frame(maxWidth: .infinity)
+                    }
+                    .glassButton(prominent: true)
+                }
+                .font(.system(size: 13, weight: .semibold))
+                .controlSize(.large)
+            }
+        }
+        .panelStyle(width: 360)
+    }
+}
+
+// MARK: - Hướng dẫn lần đầu
+
+struct OnboardingView: View {
+    var onDone: @MainActor () -> Void = {}
+    @State private var trusted = AXIsProcessTrusted()
+    @State private var openAtLogin = SMAppService.mainApp.status == .enabled
+    private let tick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        VStack(spacing: 14) {
+            AppIconView(size: 84)
+
+            Text(L("Chào mừng tới RinDock", "Welcome to RinDock"))
+                .font(.system(size: 22, weight: .bold, design: .rounded))
+
+            Text(L("Làm 2 bước dưới đây là dùng được ngay.", "Two quick steps and you're ready."))
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+
+            // Bước 1: quyền
+            VStack(alignment: .leading, spacing: 10) {
+                stepHeader(1, L("Cấp quyền Accessibility", "Allow Accessibility"), done: trusted)
+                Text(L("RinDock cần quyền này để biết bạn bấm icon nào trên Dock và thu nhỏ cửa sổ. Không chụp màn hình, không ghi phím.",
+                       "RinDock needs this to see which Dock icon you click and minimize windows. No screen recording, no keylogging."))
+                    .noteText()
+                if trusted {
+                    Label(L("Đã cấp quyền", "Permission granted"), systemImage: "checkmark.circle.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Color(red: 0.55, green: 1.0, blue: 0.7))
+                } else {
+                    Text(L("Bấm nút dưới → bật công tắc cạnh RinDock trong danh sách.",
+                           "Click below → turn on the switch next to RinDock."))
+                        .font(.system(size: 12, weight: .medium))
+                    Button {
+                        let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
+                        _ = AXIsProcessTrustedWithOptions([key: true] as CFDictionary)
+                        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    } label: {
+                        Label(L("Mở cài đặt Accessibility", "Open Accessibility settings"), systemImage: "lock.open.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 4)
+                    }
+                    .glassButton(prominent: true)
+                    .controlSize(.large)
+                    Text(L("Đã bật mà vẫn báo chưa có quyền? Chọn RinDock trong danh sách, bấm nút − để xoá, rồi bấm lại nút trên.",
+                           "Turned it on but still not granted? Select RinDock in the list, click − to remove it, then click the button above again."))
+                        .noteText()
+                }
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .softCard(cornerRadius: 16)
+
+            // Bước 2: mở cùng máy
+            VStack(alignment: .leading, spacing: 10) {
+                stepHeader(2, L("Mở cùng máy (nên bật)", "Open at login (recommended)"), done: openAtLogin)
+                Toggle(L("Tự mở RinDock khi bật máy", "Start RinDock when you log in"), isOn: $openAtLogin)
+                    .font(.system(size: 12, weight: .medium))
+                    .onChange(of: openAtLogin) { on in
+                        do {
+                            if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
+                        } catch {
+                            openAtLogin = SMAppService.mainApp.status == .enabled
+                        }
+                    }
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .softCard(cornerRadius: 16)
+
+            // Cách dùng
+            VStack(alignment: .leading, spacing: 8) {
+                Text(L("Cách dùng", "How it works"))
+                    .font(.system(size: 12, weight: .semibold))
+                bullet("dock.rectangle", L("Bấm icon app đang dùng trên Dock → thu nhỏ. Bấm lại → hiện lên.",
+                                           "Click the active app's Dock icon to minimize it. Click again to bring it back."))
+                bullet("menubar.rectangle", L("Cài đặt nằm ở icon RinDock trên thanh menu, góc trên bên phải màn hình.",
+                                              "Settings live in the RinDock icon in the menu bar, top right of your screen."))
+                bullet("command", L("Giữ ⌘ ⌥ ⌃ hoặc ⇧ khi bấm để Dock làm như bình thường.",
+                                    "Hold ⌘ ⌥ ⌃ or ⇧ while clicking for the normal Dock behavior."))
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .softCard(cornerRadius: 16)
+
+            Button {
+                onDone()
+            } label: {
+                Text(trusted ? L("Bắt đầu dùng", "Get started") : L("Để sau", "Later"))
+                    .font(.system(size: 13, weight: .semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 4)
+            }
+            .glassButton(prominent: trusted)
+            .controlSize(.large)
+        }
+        .panelStyle(width: 380)
+        .onReceive(tick) { _ in
+            trusted = AXIsProcessTrusted()
+        }
+    }
+
+    private func stepHeader(_ n: Int, _ title: String, done: Bool) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: done ? "checkmark.circle.fill" : "\(n).circle.fill")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(done ? Color(red: 0.55, green: 1.0, blue: 0.7) : Color.white)
+            Text(title)
+                .font(.system(size: 14, weight: .semibold))
+        }
+    }
+
+    private func bullet(_ symbol: String, _ text: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: symbol)
+                .font(.system(size: 12, weight: .semibold))
+                .frame(width: 18)
+            Text(text)
+                .font(.system(size: 12))
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
 
@@ -1369,6 +1705,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let supportPanel = Panel { AnyView(SupportView()) }
     private let aboutPanel = Panel { AnyView(AboutView()) }
     private let bugPanel = Panel { AnyView(BugReportView()) }
+    private let appearancePanel = Panel { AnyView(AppearanceView()) }
+    private lazy var onboardingPanel: Panel = {
+        Panel { [weak self] in
+            AnyView(OnboardingView(onDone: { self?.finishOnboarding() }))
+        }
+    }()
     private lazy var updatePanel: Panel = {
         let u = updater
         return Panel { AnyView(UpdateView(updater: u)) }
@@ -1383,11 +1725,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         clicker.start()
 
-        let promptKey = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
-        if !AXIsProcessTrustedWithOptions([promptKey: true] as CFDictionary) {
+        // Lần đầu mở, hoặc chưa có quyền: hiện cửa sổ hướng dẫn thay cho hộp thoại hệ thống.
+        if !AXIsProcessTrusted() {
             trustTimer = Timer.scheduledTimer(timeInterval: 2, target: self,
                                               selector: #selector(checkTrust(_:)),
                                               userInfo: nil, repeats: true)
+        }
+        if !Prefs.onboarded || !AXIsProcessTrusted() {
+            onboardingPanel.show()
         }
 
         Prefs.migrate()
@@ -1409,6 +1754,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             trustTimer = nil
             updateIcon()
         }
+    }
+
+    private func finishOnboarding() {
+        Prefs.onboarded = true
+        onboardingPanel.close()
+        updateIcon()
+    }
+
+    @objc private func openOnboarding() {
+        onboardingPanel.show()
+    }
+
+    @objc private func openAppearance() {
+        appearancePanel.show()
     }
 
     @objc private func periodicUpdateCheck(_ timer: Timer) {
@@ -1437,7 +1796,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if AXIsProcessTrusted() {
             menu.addItem(label(Prefs.enabled ? L("RinDock đang chạy", "RinDock is running") : L("RinDock đang tắt", "RinDock is off")))
         } else {
-            menu.addItem(item(L("⚠️ Cần cấp quyền Accessibility…", "⚠️ Accessibility permission needed…"), #selector(openAccessibility)))
+            menu.addItem(item(L("⚠️ Cần cấp quyền Accessibility…", "⚠️ Accessibility permission needed…"), #selector(openOnboarding)))
         }
         menu.addItem(.separator())
 
@@ -1495,9 +1854,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         langItem.submenu = langMenu
         menu.addItem(langItem)
+        menu.addItem(item(L("Giao diện kính…", "Glass Appearance…"), #selector(openAppearance)))
         menu.addItem(.separator())
 
         menu.addItem(item(L("Giới thiệu RinDock", "About RinDock"), #selector(openAbout)))
+        menu.addItem(item(L("Hướng dẫn sử dụng", "Getting Started"), #selector(openOnboarding)))
         menu.addItem(item(L("Báo lỗi…", "Report a Bug…"), #selector(openBugReport)))
         menu.addItem(item(L("♥ Ủng hộ tác giả…", "♥ Support the Author…"), #selector(openSupport)))
         menu.addItem(.separator())
@@ -1592,7 +1953,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard let raw = sender.representedObject as? String, let lang = AppLanguage(rawValue: raw) else { return }
         Prefs.language = lang
         // Cửa sổ nào đang mở thì vẽ lại ngay bằng ngôn ngữ mới.
-        for panel in [supportPanel, aboutPanel, bugPanel, updatePanel] {
+        for panel in [supportPanel, aboutPanel, bugPanel, updatePanel, appearancePanel, onboardingPanel] {
             panel.reloadIfVisible()
         }
         updateIcon()

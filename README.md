@@ -80,6 +80,8 @@ App sẽ được chép vào **Applications** và tự mở lên.
 
 ## Cấp quyền
 
+Lần đầu mở, RinDock hiện cửa sổ **Chào mừng** hướng dẫn từng bước: bấm **Mở cài đặt Accessibility**, bật công tắc cạnh RinDock là xong (cửa sổ tự hiện dấu ✓). Mở lại hướng dẫn bất cứ lúc nào: icon RinDock → **Hướng dẫn sử dụng**.
+
 RinDock cần quyền **Accessibility** để biết bạn bấm icon nào trên Dock và thu nhỏ cửa sổ.
 
 1. Lần đầu mở app, macOS sẽ hỏi. Bấm **Open System Settings**.
@@ -108,6 +110,12 @@ Lưu ý:
 - Mọi bản cập nhật đều được ký số. RinDock kiểm tra chữ ký trước khi cài, sai chữ ký là không cài.
 - Bản cập nhật giữ nguyên quyền Accessibility, bạn không phải cấp lại.
 
+## Giao diện kính
+
+Icon RinDock → **Giao diện kính…**:
+- **Kiểu kính:** Theo hệ thống (theo cài đặt Liquid Glass của macOS) · Trong · Mờ. Cần macOS 26.1 trở lên.
+- **Độ đậm của nền:** kéo về Trong để nhìn xuyên ra màn hình phía sau, kéo về Đậm cho dễ đọc.
+
 ## Ngôn ngữ
 
 RinDock có tiếng Việt và tiếng Anh. Đổi ở: icon RinDock trên thanh menu → **Ngôn ngữ · Language** → **Tiếng Việt**, **English** hoặc **Theo ngôn ngữ của máy**.
@@ -118,7 +126,7 @@ RinDock có tiếng Việt và tiếng Anh. Đổi ở: icon RinDock trên thanh
 - Quyền Accessibility chỉ dùng để đọc icon Dock dưới con trỏ và thu nhỏ / hiện cửa sổ.
 - Kết nối mạng duy nhất: hỏi GitHub có bản mới không (mỗi ngày, mỗi tuần, hoặc tắt), và tải bản mới khi cập nhật. Không gửi thông tin gì của bạn.
 - Bản cập nhật được ký số; RinDock chỉ cài khi chữ ký đúng là của tác giả.
-- Khi bạn bấm **Báo lỗi**, app chỉ mở email hoặc GitHub có điền sẵn phiên bản app, macOS và loại chip. Bạn xem được hết trước khi gửi, không gửi thì không có gì đi đâu cả.
+- Khi bạn bấm **Báo lỗi**, app chỉ mở email hoặc GitHub có điền sẵn phiên bản app, macOS, loại chip và nhật ký 30 lần bấm Dock gần nhất (tên app được bấm, chỉ lưu trong bộ nhớ, thoát app là mất). Bạn xem được hết trước khi gửi, không gửi thì không có gì đi đâu cả.
 - Toàn bộ mã nguồn nằm trong một file: [`Sources/main.swift`](Sources/main.swift). Bạn có thể đọc trước khi cài.
 
 ## Gặp lỗi?
