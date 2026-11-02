@@ -26,11 +26,16 @@ for ARCH in arm64 x86_64; do
     -target "$ARCH-apple-macos13.0" \
     Sources/main.swift \
     -o "build/obj/RinDock-$ARCH" \
-    -framework Cocoa -framework ApplicationServices -framework ServiceManagement
+    -swift-version 5 \
+    -framework Cocoa -framework ApplicationServices -framework ServiceManagement -framework SwiftUI
 done
 lipo -create build/obj/RinDock-arm64 build/obj/RinDock-x86_64 -output "$APP/Contents/MacOS/RinDock"
 
 cp Info.plist "$APP/Contents/Info.plist"
+# Ảnh QR ủng hộ (nếu có) đóng gói vào app.
+if [[ -f assets/donate-qr.png ]]; then
+  cp assets/donate-qr.png "$APP/Contents/Resources/donate-qr.png"
+fi
 codesign --force --sign - "$APP" >/dev/null 2>&1
 echo "✓ Xong: $APP"
 

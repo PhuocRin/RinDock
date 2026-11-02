@@ -4,6 +4,7 @@
 import Cocoa
 import ApplicationServices
 import ServiceManagement
+import SwiftUI
 
 // MARK: - Cài đặt
 
@@ -235,11 +236,103 @@ final class DockClicker {
     }
 }
 
+// MARK: - Cửa sổ Ủng hộ tác giả
+
+enum Support {
+    static let paypalURL = URL(string: "https://paypal.me/phuocrin")!
+    /// Ảnh QR ủng hộ, đóng gói trong app (Contents/Resources/donate-qr.png).
+    static var qrImage: NSImage? { Bundle.main.image(forResource: "donate-qr") }
+}
+
+struct SupportView: View {
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "heart.fill")
+                .font(.system(size: 34, weight: .semibold))
+                .foregroundStyle(
+                    LinearGradient(colors: [.pink, .purple], startPoint: .topLeading, endPoint: .bottomTrailing)
+                )
+                .padding(.top, 8)
+
+            Text("Ủng hộ tác giả")
+                .font(.system(size: 22, weight: .bold, design: .rounded))
+
+            Text("RinDock miễn phí. Nếu app giúp ích cho bạn, bạn có thể ủng hộ Phước Rin để mình có thêm động lực làm app và video.")
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let qr = Support.qrImage {
+                VStack(spacing: 8) {
+                    Image(nsImage: qr)
+                        .resizable()
+                        .interpolation(.high)
+                        .scaledToFit()
+                        .frame(width: 200, height: 200)
+                        .padding(12)
+                        .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(.white))
+                        .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
+                    Text("Quét mã QR để ủng hộ")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 4)
+            }
+
+            Button {
+                NSWorkspace.shared.open(Support.paypalURL)
+            } label: {
+                Label("Ủng hộ qua PayPal", systemImage: "creditcard")
+                    .font(.system(size: 13, weight: .semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+
+            Text("Cảm ơn bạn đã dùng RinDock 💙")
+                .font(.system(size: 11))
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.horizontal, 28)
+        .padding(.top, 36)
+        .padding(.bottom, 24)
+        .frame(width: 340)
+        .background(.ultraThinMaterial)
+    }
+}
+
+@MainActor
+final class SupportWindowController {
+    private var window: NSWindow?
+
+    func show() {
+        if window == nil {
+            let hosting = NSHostingView(rootView: SupportView())
+            let w = NSWindow(contentRect: NSRect(origin: .zero, size: hosting.fittingSize),
+                             styleMask: [.titled, .closable, .fullSizeContentView],
+                             backing: .buffered, defer: false)
+            w.titlebarAppearsTransparent = true
+            w.titleVisibility = .hidden
+            w.isMovableByWindowBackground = true
+            w.isReleasedWhenClosed = false
+            w.contentView = hosting
+            w.setContentSize(hosting.fittingSize)
+            w.center()
+            window = w
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        window?.makeKeyAndOrderFront(nil)
+    }
+}
+
 // MARK: - Thanh menu
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private let clicker = DockClicker()
+    private let supportWindow = SupportWindowController()
     private var trustTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -303,7 +396,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(login)
         menu.addItem(.separator())
 
-        menu.addItem(item("☕ Mời Phước Rin ly cà phê", #selector(openSupport)))
+        menu.addItem(item("♥ Ủng hộ tác giả…", #selector(openSupport)))
         menu.addItem(.separator())
 
         menu.addItem(item("Thoát RinDock", #selector(quit)))
@@ -357,9 +450,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func openSupport() {
-        if let url = URL(string: "https://phuocrin.com") {
-            NSWorkspace.shared.open(url)
-        }
+        supportWindow.show()
     }
 
     @objc private func quit() {

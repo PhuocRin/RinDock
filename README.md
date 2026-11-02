@@ -112,10 +112,9 @@ Một số app khai báo cửa sổ theo kiểu riêng nên RinDock không nhậ
 
 ## Ủng hộ tác giả
 
-RinDock miễn phí và sẽ luôn miễn phí. Nếu app giúp bạn dùng Mac thoải mái hơn và bạn muốn mời mình ly cà phê:
+RinDock miễn phí và sẽ luôn miễn phí. Nếu app giúp ích cho bạn, bạn có thể ủng hộ tác giả ngay trong app: bấm icon RinDock trên thanh menu → **♥ Ủng hộ tác giả…**
 
-- ☕ [phuocrin.com](https://phuocrin.com): mục mời cà phê có mã QR ủng hộ
-- 💙 [PayPal.me/phuocrin](https://paypal.me/phuocrin)
+Hoặc ủng hộ qua [PayPal.me/phuocrin](https://paypal.me/phuocrin).
 
 Không ủng hộ cũng không sao. Bấm ⭐ cho repo, hoặc chia sẻ RinDock cho bạn bè dùng Mac là mình vui rồi.
 
@@ -142,7 +141,7 @@ cd RinDock
 
 **Modes (menu bar):** minimize all windows (default), minimize the focused window, or hide the app. Hold ⌘, ⌥, ⌃ or ⇧ while clicking to get the normal Dock behavior.
 
-**Support:** RinDock is free. If you'd like to buy me a coffee: [PayPal.me/phuocrin](https://paypal.me/phuocrin). A ⭐ on the repo helps too.
+**Support the author:** RinDock is free. You can support me from the app (menu bar icon → **♥ Ủng hộ tác giả…**) or via [PayPal.me/phuocrin](https://paypal.me/phuocrin). A ⭐ on the repo helps too.
 
 ---
 
