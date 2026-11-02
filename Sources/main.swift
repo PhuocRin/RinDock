@@ -243,6 +243,72 @@ enum DockHitTest {
     }
 }
 
+// MARK: - App nào đang ở trên cùng
+
+/// Ghi lại lịch sử app được đưa lên trước, để biết đúng app nào đang dùng
+/// tại THỜI ĐIỂM nhấn chuột (Dock có thể đã kịp đổi app trước khi RinDock xử lý).
+final class FrontmostTracker {
+    private var history: [(time: TimeInterval, pid: pid_t)] = []
+    private var observer: NSObjectProtocol?
+
+    init() {
+        if let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier {
+            history.append((0, pid))
+        }
+        observer = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+        ) { [weak self] note in
+            guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
+            self?.record(app.processIdentifier)
+        }
+    }
+
+    private func record(_ pid: pid_t) {
+        history.append((ProcessInfo.processInfo.systemUptime, pid))
+        if history.count > 20 { history.removeFirst(history.count - 20) }
+    }
+
+    /// App đang ở trên cùng tại thời điểm `t` (giây kể từ lúc bật máy, cùng thang với NSEvent.timestamp).
+    func frontmost(at t: TimeInterval) -> pid_t? {
+        history.last(where: { $0.time <= t })?.pid
+            ?? NSWorkspace.shared.frontmostApplication?.processIdentifier
+    }
+}
+
+/// Đọc thứ tự cửa sổ trên màn hình (từ trên xuống), không cần quyền ghi màn hình.
+enum WindowStack {
+    /// Cửa sổ trên cùng của app có đang bị cửa sổ app khác đè lên không.
+    static func isCovered(pid: pid_t) -> Bool {
+        let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
+        guard let list = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else { return false }
+        let me = ProcessInfo.processInfo.processIdentifier
+        var above: [CGRect] = []
+
+        for w in list {
+            let layer = (w[kCGWindowLayer as String] as? NSNumber)?.intValue ?? -1
+            guard layer >= 0, layer < 25 else { continue }   // bỏ thanh menu, Dock, thông báo…
+            guard let owner = (w[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value,
+                  let dict = w[kCGWindowBounds as String] as? NSDictionary,
+                  let rect = CGRect(dictionaryRepresentation: dict as CFDictionary),
+                  rect.width > 60, rect.height > 60 else { continue }
+            let alpha = (w[kCGWindowAlpha as String] as? NSNumber)?.doubleValue ?? 1
+            if alpha < 0.1 || owner == me { continue }
+
+            if owner == pid {
+                guard layer == 0 else { continue }
+                let area = rect.width * rect.height
+                for r in above {
+                    let overlap = rect.intersection(r)
+                    if !overlap.isNull, overlap.width * overlap.height > area * 0.2 { return true }
+                }
+                return false
+            }
+            above.append(rect)
+        }
+        return false
+    }
+}
+
 // MARK: - Bắt cú bấm trên Dock
 
 final class DockClicker {
@@ -250,7 +316,7 @@ final class DockClicker {
         let point: CGPoint
         let time: Date
         let app: NSRunningApplication
-        let wasFrontmost: Bool
+        let wasActive: Bool
         let wasHidden: Bool
         let visible: [AXUIElement]
         let minimized: [AXUIElement]
@@ -261,6 +327,7 @@ final class DockClicker {
     private var upMonitor: Any?
     private var press: Press?
     private var lastAction = Date.distantPast
+    private let tracker = FrontmostTracker()
 
     func start() {
         downMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] e in
@@ -271,7 +338,7 @@ final class DockClicker {
         }
     }
 
-    // Chụp lại trạng thái TRƯỚC khi Dock xử lý cú bấm (Dock xử lý lúc nhả chuột).
+    // Chụp lại trạng thái lúc nhấn chuột, trước khi Dock xử lý cú bấm.
     private func handleDown(_ e: NSEvent) {
         press = nil
         guard Prefs.enabled, AXIsProcessTrusted() else { return }
@@ -288,11 +355,15 @@ final class DockClicker {
         var focused = AX.element(AXUIElementCreateApplication(pid), kAXFocusedWindowAttribute)
         if let f = focused, AX.isMinimized(f) { focused = nil }
 
+        // "Đang dùng" = là app trên cùng ĐÚNG lúc nhấn chuột, và cửa sổ không bị app khác đè lên.
+        let frontAtPress = tracker.frontmost(at: e.timestamp) == pid
+        let active = frontAtPress && !WindowStack.isCovered(pid: pid)
+
         press = Press(
             point: point,
             time: Date(),
             app: app,
-            wasFrontmost: NSWorkspace.shared.frontmostApplication?.processIdentifier == pid,
+            wasActive: active,
             wasHidden: app.isHidden,
             visible: wins.filter { !AX.isMinimized($0) },
             minimized: wins.filter { AX.isMinimized($0) },
@@ -322,8 +393,8 @@ final class DockClicker {
         // App đang bị ẩn: Dock tự hiện lại, không cần làm gì.
         if p.wasHidden { return }
 
-        if p.wasFrontmost && !p.visible.isEmpty {
-            // App đang dùng, có cửa sổ đang hiện → thu nhỏ / ẩn.
+        if p.wasActive && !p.visible.isEmpty {
+            // App đang dùng, nằm trên cùng → thu nhỏ / ẩn.
             switch Prefs.mode {
             case .hide:
                 p.app.hide()
@@ -341,8 +412,13 @@ final class DockClicker {
             }
             p.app.activate(options: [.activateAllWindows])
             lastAction = Date()
+        } else if !p.visible.isEmpty {
+            // App nằm dưới app khác → đưa cửa sổ của nó lên trên (giống Windows), không thu nhỏ.
+            if let top = p.focused ?? p.visible.first {
+                AXUIElementPerformAction(top, kAXRaiseAction as CFString)
+            }
+            p.app.activate(options: [.activateAllWindows])
         }
-        // Các trường hợp khác: để Dock làm như bình thường.
     }
 }
 
