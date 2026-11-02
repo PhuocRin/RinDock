@@ -702,16 +702,65 @@ struct BehindWindowBlur: NSViewRepresentable {
     func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
 }
 
-/// Nền cửa sổ: màn hình phía sau được làm mờ + lớp gradient, độ đậm chỉnh trong Giao diện kính.
+/// Độ đậm màu của nền cửa sổ (0 = kính trong, 1 = đậm), chỉnh trong Giao diện kính.
+enum Tint {
+    static let key = "tintAmount"
+    static let defaultValue = 0.45
+    /// Màu tím cùng tông icon app.
+    static let color = NSColor(red: 0.45, green: 0.36, blue: 1.0, alpha: 1)
+}
+
+#if compiler(>=6.2)
+/// Nền cửa sổ bằng Liquid Glass thật (NSGlassEffectView, macOS 26): khúc xạ màn hình phía sau cửa sổ.
+@available(macOS 26.0, *)
+struct WindowGlass: NSViewRepresentable {
+    var look: GlassLook
+    var tint: Double
+
+    func makeNSView(context: Context) -> NSGlassEffectView {
+        let v = NSGlassEffectView()
+        v.contentView = NSView()
+        apply(v)
+        return v
+    }
+
+    func updateNSView(_ v: NSGlassEffectView, context: Context) { apply(v) }
+
+    private func apply(_ v: NSGlassEffectView) {
+        v.cornerRadius = 16
+        v.style = look == .clear ? .clear : .regular
+        // Kiểu "Mờ" phủ thêm một lớp màu để chữ dễ đọc hơn.
+        let alpha = min(0.85, tint * 0.7 + (look == .tinted ? 0.15 : 0))
+        v.tintColor = alpha < 0.02 ? nil : Tint.color.withAlphaComponent(alpha)
+    }
+}
+#endif
+
+/// Nền cửa sổ: macOS 26 dùng Liquid Glass thật; bản cũ hơn (hoặc khi bật Giảm độ trong suốt)
+/// dùng màn hình phía sau làm mờ + lớp gradient.
 struct PanelBackground: View {
-    @AppStorage("backdropOpacity") private var opacity: Double = 0.85
+    @AppStorage(Tint.key) private var tint: Double = Tint.defaultValue
+    @AppStorage("glassLook") private var look: GlassLook = .system
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
+    @ViewBuilder
     var body: some View {
+        #if compiler(>=6.2)
+        if #available(macOS 26.0, *), !reduceTransparency {
+            WindowGlass(look: look, tint: tint).ignoresSafeArea()
+        } else {
+            legacy
+        }
+        #else
+        legacy
+        #endif
+    }
+
+    private var legacy: some View {
         ZStack {
             BehindWindowBlur()
             PanelBackdrop()
-                .opacity(reduceTransparency ? 1 : opacity)
+                .opacity(reduceTransparency ? 1 : 0.3 + 0.7 * tint)
         }
         .ignoresSafeArea()
     }
@@ -1312,7 +1361,7 @@ struct AppRulesView: View {
 
 struct AppearanceView: View {
     @AppStorage("glassLook") private var look: GlassLook = .system
-    @AppStorage("backdropOpacity") private var opacity: Double = 0.85
+    @AppStorage(Tint.key) private var opacity: Double = Tint.defaultValue
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     private var supportsGlassStyles: Bool {
@@ -1337,13 +1386,22 @@ struct AppearanceView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text(L("Kiểu kính", "Glass style"))
                     .font(.system(size: 12, weight: .semibold))
-                Picker(L("Kiểu kính", "Glass style"), selection: $look) {
-                    ForEach(GlassLook.allCases, id: \.self) { g in
-                        Text(g.title).tag(g)
+                GlassGroup(spacing: 6) {
+                    HStack(spacing: 6) {
+                        ForEach(GlassLook.allCases, id: \.self) { g in
+                            Button {
+                                look = g
+                            } label: {
+                                Text(g.title)
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.8)
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .glassButton(prominent: look == g)
+                        }
                     }
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
                 .disabled(!supportsGlassStyles)
                 Text(supportsGlassStyles ? look.note
                      : L("Cần macOS 26.1 trở lên để đổi kiểu kính.", "Changing the glass style needs macOS 26.1 or later."))
@@ -1362,7 +1420,7 @@ struct AppearanceView: View {
                         .font(.system(size: 12, weight: .medium).monospacedDigit())
                         .foregroundStyle(.secondary)
                 }
-                Slider(value: $opacity, in: 0.3...1.0) {
+                Slider(value: $opacity, in: 0...1) {
                     Text(L("Độ đậm của nền", "Background tint"))
                 } minimumValueLabel: {
                     Text(L("Trong", "Clear")).font(.system(size: 11))
@@ -1385,7 +1443,7 @@ struct AppearanceView: View {
                 HStack(spacing: 10) {
                     Button {
                         look = .system
-                        opacity = 0.85
+                        opacity = Tint.defaultValue
                     } label: {
                         Text(L("Đặt lại", "Reset")).frame(maxWidth: .infinity)
                     }
