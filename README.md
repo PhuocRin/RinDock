@@ -49,7 +49,7 @@ Mẹo:
 
 1. Bấm **Xong** (**Done**). ⚠️ **Đừng bấm Chuyển vào Thùng rác** (**Move to Trash**), bấm là app bị xoá.
 2. Mở **Cài đặt hệ thống → Quyền riêng tư & Bảo mật** (**System Settings → Privacy & Security**).
-3. Kéo xuống phần **Bảo mật** (**Security**), thấy dòng nói về RinDock thì bấm **Vẫn mở** (**Open Anyway**), nhập mật khẩu máy hoặc dùng Touch ID.
+3. Kéo xuống phần **Bảo mật** (**Security**), chỗ dòng nói về RinDock bấm **Vẫn mở** (**Open Anyway**), nhập mật khẩu máy hoặc dùng Touch ID.
 4. Hộp thoại hiện lại thì bấm **Vẫn mở** (**Open Anyway**).
 
 Chỉ cần làm một lần. Các bản cập nhật sau RinDock tự cài, không bị chặn nữa.
