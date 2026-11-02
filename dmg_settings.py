@@ -1,0 +1,32 @@
+# Cấu hình cửa sổ cài đặt .dmg cho dmgbuild (https://dmgbuild.readthedocs.io).
+# build.sh truyền đường dẫn app vào qua -D app=...
+import os.path
+
+app = defines.get("app", "build/RinDock.app")  # noqa: F821 (dmgbuild tự cung cấp 'defines')
+appname = os.path.basename(app)
+
+format = "UDZO"
+filesystem = "HFS+"
+
+files = [app]
+symlinks = {"Applications": "/Applications"}
+
+# Nền kính mờ; dmgbuild tự ghép bản @2x cho màn hình Retina.
+background = "assets/dmg-background.png"
+
+show_status_bar = False
+show_tab_view = False
+show_toolbar = False
+show_pathbar = False
+show_sidebar = False
+
+window_rect = ((200, 120), (600, 400))
+default_view = "icon-view"
+
+icon_size = 112
+text_size = 13
+arrange_by = None
+icon_locations = {
+    appname: (150, 178),
+    "Applications": (450, 178),
+}
