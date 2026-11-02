@@ -1,11 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 36 36">
-  <defs><mask id="m"><rect width="36" height="36" fill="#fff"/><circle cx="30" cy="4.5" r="7.2" fill="#000"/></mask></defs>
-  <g mask="url(#m)">
-    <rect x="5.5" y="2" width="25" height="16.5" rx="3.6" fill="none" stroke="#000" stroke-width="3"/>
-    <rect x="5.5" y="2" width="25" height="5.6" rx="2.6" fill="#000"/>
+  <!-- Con trỏ bấm vào Dock + chấm báo có bản mới -->
+  <defs>
+    <path id="ptr" d="M15 3 L15 22.5 L19.6 18.3 L22.6 25.2 L26 23.7 L23 16.9 L29.2 16.6 Z"/>
+    <mask id="cut">
+      <rect width="36" height="36" fill="#fff"/>
+      <use href="#ptr" fill="#000" stroke="#000" stroke-width="5" stroke-linejoin="round"/>
+    </mask>
+  </defs>
+  <g mask="url(#cut)">
+    <rect x="2.5" y="21.5" width="31" height="11" rx="5.5" fill="none" stroke="#000" stroke-width="2.8"/>
+    <rect x="7.5" y="25.2" width="4.6" height="3.6" rx="1.4" fill="#000"/>
+    <rect x="23.8" y="25.2" width="4.6" height="3.6" rx="1.4" fill="#000"/>
   </g>
-  <circle cx="30" cy="4.5" r="4.8" fill="#000"/>
-  <path d="M18 20.5 V26" stroke="#000" stroke-width="3" stroke-linecap="round"/>
-  <path d="M13.8 23 L18 27.2 L22.2 23" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-  <rect x="3" y="29.2" width="30" height="5.3" rx="2.65" fill="#000"/>
+  <use href="#ptr" fill="#000" stroke="#000" stroke-width="1.2" stroke-linejoin="round"/>
+  <circle cx="30.5" cy="5.5" r="4.6" fill="#000"/>
 </svg>
