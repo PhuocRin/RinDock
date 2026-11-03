@@ -9,7 +9,6 @@ import CryptoKit
 import Combine
 import UniformTypeIdentifiers
 import Security
-import UserNotifications
 
 // MARK: - Cài đặt
 
@@ -204,12 +203,6 @@ enum Prefs {
     static var justUpdatedFrom: String? {
         get { d.string(forKey: "justUpdatedFrom") }
         set { d.set(newValue, forKey: "justUpdatedFrom") }
-    }
-
-    /// Bản mới nhất đã gửi thông báo (mỗi bản chỉ báo một lần).
-    static var notifiedVersion: String? {
-        get { d.string(forKey: "notifiedVersion") }
-        set { d.set(newValue, forKey: "notifiedVersion") }
     }
 }
 
@@ -1486,11 +1479,7 @@ final class Updater: ObservableObject {
     /// Kiểm tra nền theo tần suất người dùng chọn (mỗi ngày / mỗi tuần / tắt).
     func checkIfDue() {
         guard let interval = Prefs.updateFrequency.interval else { return }
-        // Vừa cài hoặc đổi sang bản khác: kiểm tra ngay một lần, không chờ hết chu kỳ.
-        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
-        let fresh = UserDefaults.standard.string(forKey: "lastCheckBuild") != build
-        if !fresh, let last = Prefs.lastUpdateCheck, Date().timeIntervalSince(last) < interval { return }
-        UserDefaults.standard.set(build, forKey: "lastCheckBuild")
+        if let last = Prefs.lastUpdateCheck, Date().timeIntervalSince(last) < interval { return }
         check(background: true)
     }
 
@@ -1825,55 +1814,12 @@ struct UpdateView: View {
             return L("Có bản mới là RinDock tự tải, kiểm tra chữ ký rồi cài và mở lại. Chỉ hỏi GitHub, không gửi thông tin gì của bạn.",
                      "RinDock downloads, verifies and installs new versions on its own, then reopens. It only asks GitHub; nothing about you is sent.")
         case .ask:
-            return L("Có bản mới là RinDock gửi thông báo, bấm vào để xem và cập nhật, một nút là xong. Chỉ hỏi GitHub, không gửi thông tin gì của bạn.",
-                     "RinDock sends a notification; click it to see what's new and update in one click. It only asks GitHub; nothing about you is sent.")
+            return L("Có bản mới là RinDock hỏi bạn trước, bấm một nút là xong. Chỉ hỏi GitHub, không gửi thông tin gì của bạn.",
+                     "RinDock asks you first; one click installs it. It only asks GitHub; nothing about you is sent.")
         case .notify:
-            return L("Có bản mới thì RinDock gửi thông báo và icon trên thanh menu đổi dấu, bạn tự cập nhật khi muốn. Chỉ hỏi GitHub, không gửi thông tin gì của bạn.",
-                     "RinDock sends a notification and marks the menu bar icon when an update is out; you update when you like. It only asks GitHub; nothing about you is sent.")
+            return L("Có bản mới thì icon trên thanh menu đổi dấu, bạn tự cập nhật khi muốn. Chỉ hỏi GitHub, không gửi thông tin gì của bạn.",
+                     "The menu bar icon changes when an update is out; you update when you like. It only asks GitHub; nothing about you is sent.")
         }
-    }
-}
-
-// MARK: - Thông báo có bản mới
-
-/// Gửi thông báo của macOS khi tìm thấy bản mới. Bấm vào thông báo là mở cửa sổ Cập nhật.
-@MainActor
-final class UpdateNotifier: NSObject, UNUserNotificationCenterDelegate {
-    var onOpen: (@MainActor () -> Void)?
-    private let center = UNUserNotificationCenter.current()
-
-    func activate() {
-        center.delegate = self
-    }
-
-    /// `delivered` = false khi người dùng không cho phép thông báo (để chỗ gọi tự hiện cửa sổ thay thế).
-    func notify(_ version: String, delivered: @escaping @MainActor (Bool) -> Void) {
-        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
-            Task { @MainActor in
-                guard granted else { delivered(false); return }
-                let content = UNMutableNotificationContent()
-                content.title = L("Có bản mới RinDock \(version)", "RinDock \(version) is available")
-                content.body = L("Bấm để xem có gì mới và cập nhật.", "Click to see what's new and update.")
-                content.sound = .default
-                let req = UNNotificationRequest(identifier: "rindock-update-\(version)", content: content, trigger: nil)
-                self.center.add(req) { err in
-                    Task { @MainActor in delivered(err == nil) }
-                }
-            }
-        }
-    }
-
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
-                                            willPresent notification: UNNotification,
-                                            withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
-        completionHandler([.banner, .sound])
-    }
-
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
-                                            didReceive response: UNNotificationResponse,
-                                            withCompletionHandler completionHandler: @escaping () -> Void) {
-        Task { @MainActor in self.onOpen?() }
-        completionHandler()
     }
 }
 
@@ -1884,7 +1830,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private let clicker = DockClicker()
     private let updater = Updater()
-    private let notifier = UpdateNotifier()
     private var trustTimer: Timer?
     private var updateTimer: Timer?
 
@@ -1924,8 +1869,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Prefs.migrate()
         updater.onChange = { [weak self] in self?.updateIcon() }
         updater.onFoundInBackground = { [weak self] rel in self?.handleFoundUpdate(rel) }
-        notifier.onOpen = { [weak self] in self?.updatePanel.show() }
-        notifier.activate()
         if updater.noteJustUpdated() {
             updatePanel.show()
         }
@@ -1972,15 +1915,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         switch Prefs.updateMode {
         case .auto:
             if rel.canAutoInstall { updater.install(rel) }
-        case .ask, .notify:
-            // Mỗi bản chỉ báo một lần, không nhắc lại mỗi ngày.
-            guard Prefs.notifiedVersion != rel.version else { return }
-            let mode = Prefs.updateMode
-            notifier.notify(rel.version) { [weak self] delivered in
-                Prefs.notifiedVersion = rel.version
-                // Không được phép gửi thông báo: chế độ Hỏi trước thì mở cửa sổ như cũ.
-                if !delivered && mode == .ask { self?.updatePanel.show() }
-            }
+        case .ask:
+            updatePanel.show()
+        case .notify:
+            break
         }
     }
 
