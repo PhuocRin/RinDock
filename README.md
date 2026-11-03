@@ -117,7 +117,7 @@ Muốn kiểm tra ngay: bấm icon RinDock → **Kiểm tra cập nhật…**.
 Lưu ý:
 - Tự cập nhật chỉ chạy khi RinDock nằm trong thư mục **Applications**.
 - Mọi bản cập nhật đều được ký số. RinDock kiểm tra chữ ký trước khi cài, sai chữ ký là không cài.
-- Bản cập nhật giữ nguyên quyền của RinDock, bạn không phải cấp lại.
+- Bản cập nhật giữ nguyên quyền của RinDock, bạn không phải cấp lại. (Riêng bản tự build bằng `./build.sh install` không có chứng chỉ của tác giả nên mỗi lần build phải cấp lại quyền một lần.)
 
 ## Ngôn ngữ
 
@@ -181,9 +181,9 @@ cd RinDock
 
 **Language:** menu bar icon → **Ngôn ngữ · Language** → **English**. All menus and windows switch to English.
 
-**Updates:** RinDock updates itself. Choose how often it checks (daily, weekly, off) and what happens when an update is out (install automatically, ask first, or just notify). Every update is signed and verified before installing, and Accessibility permission is kept across updates. Self-update works when RinDock is in the Applications folder.
+**Updates:** RinDock updates itself. Choose how often it checks (daily, weekly, off) and what happens when an update is out (install automatically, ask first, or just notify). Every update is signed and verified before installing, and RinDock's permission is kept across updates. Self-update works when RinDock is in the Applications folder.
 
-**Bug reports:** menu bar icon → **Report a Bug…** (email or GitHub issue, prefilled with app version, macOS version and chip).
+**Bug reports:** menu bar icon → **Report a Bug…** (email or GitHub issue, prefilled with app version, macOS version, chip and a log of the last 30 Dock clicks: names of the clicked apps, kept in memory only. You see everything before sending).
 
 **Modes (menu bar):** minimize all windows (default), minimize the focused window, or hide the app. **Per-App Settings** lets you pick a different behavior (or ignore) for each app. **Middle-click on Dock** can open a new window or quit the app (off by default). Hold ⌘, ⌥, ⌃ or ⇧ while clicking to get the normal Dock behavior.
 

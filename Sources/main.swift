@@ -163,7 +163,11 @@ enum Prefs {
             let oldOn = d.object(forKey: "autoUpdate") as? Bool ?? true
             updateFrequency = oldOn ? .daily : .off
         }
-        d.removeObject(forKey: "autoUpdate")
+        // Bỏ các cài đặt của tính năng đã gỡ (giao diện kính, thông báo thử nghiệm).
+        for key in ["autoUpdate", "glassLook", "backdropOpacity", "backdropStrength", "tintAmount",
+                    "notifiedVersion", "lastCheckBuild"] {
+            d.removeObject(forKey: key)
+        }
     }
 
     static var lastUpdateCheck: Date? {
@@ -451,6 +455,7 @@ final class DockClicker {
     private func handleMiddleDown(_ e: NSEvent) {
         middlePress = nil
         guard e.buttonNumber == 2, Prefs.enabled, Prefs.middleClick != .off, AXIsProcessTrusted(),
+              e.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty,
               let point = e.cgEvent?.location,
               let hit = DockHitTest.item(at: point),
               let app = DockHitTest.runningApp(for: hit) else { return }
@@ -644,7 +649,7 @@ enum AppInfo {
     }
 }
 
-// MARK: - Liquid Glass dùng chung
+// MARK: - Giao diện dùng chung
 
 extension View {
     /// Khung chung cho mọi cửa sổ: nền cửa sổ chuẩn của macOS, tự đổi theo chế độ sáng/tối.
@@ -1455,9 +1460,15 @@ final class Updater: ObservableObject {
     /// Gọi khi kiểm tra nền thấy bản mới (AppDelegate quyết định làm gì theo cài đặt).
     var onFoundInBackground: (@MainActor (Release) -> Void)?
 
+    /// Gọi khi cài bản mới không thành công (để hiện cửa sổ báo lỗi, kể cả lúc tự cập nhật nền).
+    var onInstallFailed: (@MainActor () -> Void)?
+
+    /// Bản mới đang chờ cài (kể cả khi lần cài trước bị lỗi), để menu và icon vẫn báo có bản mới.
     var available: Release? {
-        if case let .available(r) = state { return r }
-        return nil
+        switch state {
+        case let .available(r), let .installFailed(r, _): return r
+        default: return nil
+        }
     }
 
     var isBusy: Bool {
@@ -1485,7 +1496,8 @@ final class Updater: ObservableObject {
 
     func check(background: Bool = false) {
         if isBusy { return }
-        state = .checking
+        // Kiểm tra nền không đổi trạng thái đang hiện (không mất bản mới đã tìm thấy, không quay vòng mãi).
+        if !background { state = .checking }
         Task { await run(background: background) }
     }
 
@@ -1499,14 +1511,15 @@ final class Updater: ObservableObject {
             let rel = try JSONDecoder().decode(Release.self, from: data)
             Prefs.lastUpdateCheck = Date()
             if Updater.isNewer(rel.version, than: AppInfo.version) {
+                if background, available?.version == rel.version { return }   // đã báo bản này rồi
                 state = .available(rel)
                 onChange?()
                 if background { onFoundInBackground?(rel) }
                 return
             }
-            state = .upToDate
+            if !background { state = .upToDate }
         } catch {
-            state = background ? .idle : .failed
+            if !background { state = .failed }
         }
         onChange?()
     }
@@ -1547,6 +1560,7 @@ final class Updater: ObservableObject {
             state = .installFailed(rel, UpdateError.failed(error.localizedDescription).message)
         }
         onChange?()
+        onInstallFailed?()
     }
 
     nonisolated static func isNewer(_ a: String, than b: String) -> Bool {
@@ -1630,7 +1644,15 @@ struct UpdateView: View {
             AppIconView(size: 76)
 
             switch updater.state {
-            case .idle, .checking:
+            case .idle:
+                title(L("Kiểm tra cập nhật", "Check for updates"))
+                Text("RinDock \(AppInfo.version)")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                Button(L("Kiểm tra ngay", "Check now")) { updater.check() }
+                    .glassButton(prominent: true)
+
+            case .checking:
                 ProgressView()
                     .controlSize(.small)
                 Text(L("Đang kiểm tra bản mới…", "Checking for updates…"))
@@ -1779,6 +1801,7 @@ struct UpdateView: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
+                .onChange(of: frequency) { _ in updater.checkIfDue() }
             }
 
             VStack(spacing: 6) {
@@ -1869,6 +1892,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Prefs.migrate()
         updater.onChange = { [weak self] in self?.updateIcon() }
         updater.onFoundInBackground = { [weak self] rel in self?.handleFoundUpdate(rel) }
+        updater.onInstallFailed = { [weak self] in self?.updatePanel.show() }
         if updater.noteJustUpdated() {
             updatePanel.show()
         }
@@ -2054,13 +2078,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func chooseMode(_ sender: NSMenuItem) {
         if let raw = sender.representedObject as? String, let mode = ClickMode(rawValue: raw) {
             Prefs.mode = mode
-        }
-    }
-
-    @objc private func openAccessibility() {
-        AppInfo.openPermissionSettings()
-        if false, let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-            NSWorkspace.shared.open(url)
         }
     }
 

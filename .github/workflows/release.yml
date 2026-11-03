@@ -1,5 +1,5 @@
 # GitHub tự build RinDock trên máy Mac của GitHub, ký app, và đăng lên Releases:
-#   RinDock-X.Y.dmg      file cài cho người tải tay
+#   RinDock-X.Y.dmg      file cài cho người tải tay (kèm bản tên cố định RinDock.dmg)
 #   RinDock-X.Y.zip      gói cho bộ tự cập nhật trong app
 #   RinDock-X.Y.zip.sig  chữ ký ed25519 của gói .zip (app kiểm tra trước khi cài)
 # Ra bản mới: repo → Releases → Draft a new release → tag vX.Y → Publish.
@@ -103,7 +103,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload "$GITHUB_REF_NAME" build/RinDock-*.dmg build/RinDock-*.zip build/RinDock-*.zip.sig --clobber
+          # Thêm bản tên cố định để link https://github.com/PhuocRin/RinDock/releases/latest/download/RinDock.dmg luôn tải bản mới nhất.
+          cp build/RinDock-*.dmg build/RinDock.dmg
+          gh release upload "$GITHUB_REF_NAME" build/RinDock-*.dmg build/RinDock.dmg build/RinDock-*.zip build/RinDock-*.zip.sig --clobber
 
       - name: Xoá keychain tạm
         if: always()
