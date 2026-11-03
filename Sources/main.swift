@@ -133,27 +133,6 @@ enum MiddleClickAction: String, CaseIterable {
     }
 }
 
-enum GlassLook: String, CaseIterable {
-    case system, clear, tinted
-
-    var title: String {
-        switch self {
-        case .system: return L("Theo hệ thống", "System")
-        case .clear:  return L("Trong", "Clear")
-        case .tinted: return L("Mờ", "Tinted")
-        }
-    }
-
-    var note: String {
-        switch self {
-        case .system: return L("Theo cài đặt Liquid Glass của macOS (System Settings → Appearance). Đổi ở đó là RinDock đổi theo.",
-                               "Follows macOS's Liquid Glass setting (System Settings → Appearance).")
-        case .clear:  return L("Kính trong hơn, thấy rõ nền phía sau.", "Clearer glass that shows more of what's behind it.")
-        case .tinted: return L("Kính đục hơn, chữ trên nút dễ đọc hơn.", "More opaque glass with easier-to-read buttons.")
-        }
-    }
-}
-
 enum Prefs {
     private static let d = UserDefaults.standard
 
@@ -667,177 +646,27 @@ enum AppInfo {
 
 // MARK: - Liquid Glass dùng chung
 
-/// Nền cửa sổ: gradient xanh tím cùng tông icon app, để lớp kính có màu mà khúc xạ.
-struct PanelBackdrop: View {
-    var body: some View {
-        ZStack {
-            LinearGradient(colors: [Color(red: 0.36, green: 0.55, blue: 1.0),
-                                    Color(red: 0.48, green: 0.36, blue: 1.0),
-                                    Color(red: 0.69, green: 0.36, blue: 1.0)],
-                           startPoint: .topLeading, endPoint: .bottomTrailing)
-            Circle()
-                .fill(Color(red: 0.45, green: 0.90, blue: 0.95).opacity(0.65))
-                .frame(width: 260, height: 260)
-                .blur(radius: 70)
-                .offset(x: 140, y: 260)
-            Circle()
-                .fill(Color(red: 1.0, green: 0.55, blue: 0.80).opacity(0.55))
-                .frame(width: 240, height: 240)
-                .blur(radius: 70)
-                .offset(x: -150, y: -200)
-            // Thêm vài mảng màu ở giữa để khối kính có chi tiết mà khúc xạ.
-            Circle()
-                .fill(Color(red: 0.35, green: 0.85, blue: 1.0).opacity(0.45))
-                .frame(width: 200, height: 200)
-                .blur(radius: 55)
-                .offset(x: 120, y: -40)
-            Circle()
-                .fill(Color(red: 1.0, green: 0.75, blue: 0.45).opacity(0.30))
-                .frame(width: 180, height: 180)
-                .blur(radius: 60)
-                .offset(x: -130, y: 120)
-        }
-        .ignoresSafeArea()
-    }
-}
-
-/// Lớp làm mờ màn hình phía sau cửa sổ.
-struct BehindWindowBlur: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let v = NSVisualEffectView()
-        v.material = .hudWindow
-        v.blendingMode = .behindWindow
-        v.state = .active
-        return v
-    }
-    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
-}
-
-/// Độ đậm của lớp màu nền (thấp = nhìn xuyên ra màn hình phía sau nhiều hơn), chỉnh trong Giao diện kính.
-enum Backdrop {
-    static let key = "backdropStrength"
-    static let defaultValue = 0.9
-    static let range = 0.4...1.0
-}
-
-/// Nền cửa sổ: màn hình phía sau làm mờ + lớp màu xanh tím cùng tông icon.
-/// Lớp màu luôn có sẵn trong cửa sổ nên các khối kính phía trên lúc nào cũng có màu để khúc xạ,
-/// kể cả khi phía sau cửa sổ là một app nền trắng.
-struct PanelBackground: View {
-    @AppStorage(Backdrop.key) private var strength: Double = Backdrop.defaultValue
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-
-    var body: some View {
-        ZStack {
-            BehindWindowBlur()
-            PanelBackdrop()
-                .opacity(reduceTransparency ? 1 : strength)
-        }
-        .ignoresSafeArea()
-    }
-}
-
-/// Đang nằm trong một khối kính: nút bên trong không dùng kính nữa (kính không đặt chồng lên kính).
-private struct InsideGlassCardKey: EnvironmentKey { static let defaultValue = false }
-extension EnvironmentValues {
-    var insideGlassCard: Bool {
-        get { self[InsideGlassCardKey.self] }
-        set { self[InsideGlassCardKey.self] = newValue }
-    }
-}
-
-/// Khối nội dung: Liquid Glass thật trên macOS 26 (khúc xạ lớp màu nền), khối mờ trong suốt ở bản cũ hơn.
-struct GlassCard: ViewModifier {
-    var cornerRadius: CGFloat
-    @AppStorage("glassLook") private var look: GlassLook = .system
-
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        #if compiler(>=6.2)
-        if #available(macOS 26.0, *) {
-            content
-                .environment(\.insideGlassCard, true)
-                .glassEffect(glass, in: .rect(cornerRadius: cornerRadius))
-        } else {
-            soft(content)
-        }
-        #else
-        soft(content)
-        #endif
-    }
-
-    #if compiler(>=6.2)
-    @available(macOS 26.0, *)
-    private var glass: Glass {
-        switch look {
-        case .system: return .regular
-        case .clear:  return .clear
-        case .tinted: return .regular.tint(Color(red: 0.16, green: 0.12, blue: 0.48).opacity(0.35))
-        }
-    }
-    #endif
-
-    private func soft(_ content: Content) -> some View {
-        content
-            .environment(\.insideGlassCard, true)
-            .background {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(Color.white.opacity(0.14))
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.28), lineWidth: 1)
-            }
-    }
-}
-
-/// Nút trong khối kính: viên thuốc mờ trắng (nút chính màu chàm đậm), không phải kính.
-struct PillButtonStyle: ButtonStyle {
-    var prominent: Bool
-
-    func makeBody(configuration: Configuration) -> some View {
-        Pill(configuration: configuration, prominent: prominent)
-    }
-
-    private struct Pill: View {
-        let configuration: ButtonStyleConfiguration
-        let prominent: Bool
-        @Environment(\.isEnabled) private var isEnabled
-        @Environment(\.controlSize) private var controlSize
-
-        var body: some View {
-            let pressed = configuration.isPressed
-            configuration.label
-                .foregroundStyle(.white)
-                .padding(.horizontal, 12)
-                .padding(.vertical, controlSize == .large ? 8 : 5)
-                .background {
-                    Capsule().fill(prominent
-                                   ? Color(red: 0.16, green: 0.12, blue: 0.48).opacity(pressed ? 0.8 : 1)
-                                   : Color.white.opacity(pressed ? 0.30 : 0.16))
-                }
-                .overlay { Capsule().strokeBorder(Color.white.opacity(prominent ? 0.18 : 0.30), lineWidth: 1) }
-                .contentShape(Capsule())
-                .opacity(isEnabled ? 1 : 0.45)
-        }
-    }
-}
-
 extension View {
-    /// Khung chung cho mọi cửa sổ: nền gradient, chữ sáng.
+    /// Khung chung cho mọi cửa sổ: nền cửa sổ chuẩn của macOS, tự đổi theo chế độ sáng/tối.
     func panelStyle(width: CGFloat = 340) -> some View {
         self
             .padding(.horizontal, 26)
             .padding(.top, 40)
             .padding(.bottom, 26)
             .frame(width: width)
-            .background { PanelBackground() }
-            .environment(\.colorScheme, .dark)
     }
 
-    /// Khối nội dung bằng kính (macOS 26) hoặc khối mờ (bản cũ hơn).
+    /// Khối nội dung nền nhạt, hợp cả chế độ sáng lẫn tối.
     func softCard(cornerRadius: CGFloat = 18) -> some View {
-        modifier(GlassCard(cornerRadius: cornerRadius))
+        self
+            .background {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(Color.primary.opacity(0.05))
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+            }
     }
 
     /// Nút Liquid Glass thật trên macOS 26, nút thường ở bản thấp hơn.
@@ -845,31 +674,26 @@ extension View {
         modifier(GlassButton(prominent: prominent))
     }
 
-    /// Chữ ghi chú nhỏ trên nền gradient.
+    /// Chữ ghi chú nhỏ.
     func noteText() -> some View {
         self
             .font(.system(size: 11))
-            .foregroundStyle(Color.white.opacity(0.78))
+            .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
     }
 }
 
 struct GlassButton: ViewModifier {
     let prominent: Bool
-    @AppStorage("glassLook") private var look: GlassLook = .system
-    @Environment(\.insideGlassCard) private var insideGlassCard
-    private let deep = Color(red: 0.16, green: 0.12, blue: 0.48)
 
     @ViewBuilder
     func body(content: Content) -> some View {
         #if compiler(>=6.2)
-        if #available(macOS 26.0, *), insideGlassCard {
-            content.buttonStyle(PillButtonStyle(prominent: prominent))
-        } else if #available(macOS 26.0, *) {
+        if #available(macOS 26.0, *) {
             if prominent {
-                content.buttonStyle(.glassProminent).tint(deep)
+                content.buttonStyle(.glassProminent)
             } else {
-                styled(content)
+                content.buttonStyle(.glass)
             }
         } else {
             fallback(content)
@@ -879,27 +703,10 @@ struct GlassButton: ViewModifier {
         #endif
     }
 
-    #if compiler(>=6.2)
-    /// Kiểu kính Trong / Mờ cần macOS 26.1; "Theo hệ thống" dùng kính mặc định để macOS tự áp cài đặt của người dùng.
-    @available(macOS 26.0, *)
-    @ViewBuilder
-    private func styled(_ content: Content) -> some View {
-        if #available(macOS 26.1, *) {
-            switch look {
-            case .system: content.buttonStyle(.glass)
-            case .clear:  content.buttonStyle(.glass(.clear))
-            case .tinted: content.buttonStyle(.glass(.regular.tint(Color.white.opacity(0.22))))
-            }
-        } else {
-            content.buttonStyle(.glass)
-        }
-    }
-    #endif
-
     @ViewBuilder
     private func fallback(_ content: Content) -> some View {
         if prominent {
-            content.buttonStyle(.borderedProminent).tint(deep)
+            content.buttonStyle(.borderedProminent)
         } else {
             content.buttonStyle(.bordered)
         }
@@ -968,9 +775,6 @@ final class Panel {
             w.titleVisibility = .hidden
             w.isMovableByWindowBackground = true
             w.isReleasedWhenClosed = false
-            w.isOpaque = false
-            w.backgroundColor = .clear
-            w.appearance = NSAppearance(named: .darkAqua)
             w.standardWindowButton(.miniaturizeButton)?.isHidden = true
             w.standardWindowButton(.zoomButton)?.isHidden = true
             window = w
@@ -996,8 +800,7 @@ struct SupportView: View {
         VStack(spacing: 14) {
             Image(systemName: "heart.fill")
                 .font(.system(size: 34, weight: .semibold))
-                .foregroundStyle(.white)
-                .shadow(color: Color.pink.opacity(0.6), radius: 12)
+                .foregroundStyle(.pink)
 
             Text(L("Ủng hộ tác giả", "Support the author"))
                 .font(.system(size: 22, weight: .bold, design: .rounded))
@@ -1164,8 +967,7 @@ struct BugReportView: View {
         VStack(spacing: 14) {
             Image(systemName: "ladybug.fill")
                 .font(.system(size: 32, weight: .semibold))
-                .foregroundStyle(.white)
-                .shadow(color: Color.orange.opacity(0.6), radius: 12)
+                .foregroundStyle(.orange)
 
             Text(L("Báo lỗi", "Report a bug"))
                 .font(.system(size: 22, weight: .bold, design: .rounded))
@@ -1181,7 +983,7 @@ struct BugReportView: View {
                     .font(.system(size: 11, weight: .semibold))
                 Text(info)
                     .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(Color.white.opacity(0.85))
+                    .foregroundStyle(.secondary)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                 Text(L("Gồm phiên bản app, macOS, loại chip và nhật ký 30 lần bấm Dock gần nhất (tên app được bấm). Không có thông tin cá nhân nào khác.",
@@ -1308,8 +1110,7 @@ struct AppRulesView: View {
         VStack(spacing: 14) {
             Image(systemName: "slider.horizontal.3")
                 .font(.system(size: 30, weight: .semibold))
-                .foregroundStyle(.white)
-                .shadow(color: Color.cyan.opacity(0.6), radius: 12)
+                .foregroundStyle(.tint)
 
             Text(L("Tuỳ chỉnh theo app", "Per-app settings"))
                 .font(.system(size: 22, weight: .bold, design: .rounded))
@@ -1355,7 +1156,7 @@ struct AppRulesView: View {
                                     } label: {
                                         Image(systemName: "minus.circle.fill")
                                             .font(.system(size: 15))
-                                            .foregroundStyle(Color.white.opacity(0.75))
+                                            .foregroundStyle(.secondary)
                                     }
                                     .buttonStyle(.plain)
                                     .help(L("Xoá, app này theo lại cài đặt chung", "Remove; this app follows the general setting again"))
@@ -1409,113 +1210,6 @@ struct AppRulesView: View {
     }
 }
 
-// MARK: - Giao diện kính
-
-struct AppearanceView: View {
-    @AppStorage("glassLook") private var look: GlassLook = .system
-    @AppStorage(Backdrop.key) private var opacity: Double = Backdrop.defaultValue
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-
-    private var supportsGlassStyles: Bool {
-        ProcessInfo.processInfo.isOperatingSystemAtLeast(OperatingSystemVersion(majorVersion: 26, minorVersion: 1, patchVersion: 0))
-    }
-
-    var body: some View {
-        VStack(spacing: 14) {
-            Image(systemName: "drop.halffull")
-                .font(.system(size: 32, weight: .semibold))
-                .foregroundStyle(.white)
-                .shadow(color: Color.cyan.opacity(0.6), radius: 12)
-
-            Text(L("Giao diện kính", "Glass appearance"))
-                .font(.system(size: 22, weight: .bold, design: .rounded))
-
-            Text(L("Áp dụng cho các cửa sổ của RinDock, đổi là thấy ngay.", "Applies to RinDock's windows and updates instantly."))
-                .font(.system(size: 13))
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text(L("Kiểu kính", "Glass style"))
-                    .font(.system(size: 12, weight: .semibold))
-                GlassGroup(spacing: 6) {
-                    HStack(spacing: 6) {
-                        ForEach(GlassLook.allCases, id: \.self) { g in
-                            Button {
-                                look = g
-                            } label: {
-                                Text(g.title)
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .lineLimit(1)
-                                    .minimumScaleFactor(0.8)
-                                    .frame(maxWidth: .infinity)
-                            }
-                            .glassButton(prominent: look == g)
-                        }
-                    }
-                }
-                .disabled(!supportsGlassStyles)
-                Text(supportsGlassStyles ? look.note
-                     : L("Cần macOS 26.1 trở lên để đổi kiểu kính.", "Changing the glass style needs macOS 26.1 or later."))
-                    .noteText()
-            }
-            .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .softCard(cornerRadius: 16)
-
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text(L("Độ đậm của nền", "Background tint"))
-                        .font(.system(size: 12, weight: .semibold))
-                    Spacer()
-                    Text("\(Int((opacity * 100).rounded()))%")
-                        .font(.system(size: 12, weight: .medium).monospacedDigit())
-                        .foregroundStyle(.secondary)
-                }
-                Slider(value: $opacity, in: Backdrop.range) {
-                    Text(L("Độ đậm của nền", "Background tint"))
-                } minimumValueLabel: {
-                    Text(L("Trong", "Clear")).font(.system(size: 11))
-                } maximumValueLabel: {
-                    Text(L("Đậm", "Solid")).font(.system(size: 11))
-                }
-                .labelsHidden()
-                .disabled(reduceTransparency)
-                Text(reduceTransparency
-                     ? L("Máy đang bật Giảm độ trong suốt (Reduce Transparency) nên nền luôn đậm.",
-                         "Reduce Transparency is on, so the background stays solid.")
-                     : L("Kéo về Trong để nhìn xuyên ra màn hình phía sau.", "Drag toward Clear to see more of the screen behind."))
-                    .noteText()
-            }
-            .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .softCard(cornerRadius: 16)
-
-            GlassGroup(spacing: 10) {
-                HStack(spacing: 10) {
-                    Button {
-                        look = .system
-                        opacity = Backdrop.defaultValue
-                    } label: {
-                        Text(L("Đặt lại", "Reset")).frame(maxWidth: .infinity)
-                    }
-                    .glassButton()
-
-                    Button {
-                        NSApp.keyWindow?.close()
-                    } label: {
-                        Text(L("Xong", "Done")).frame(maxWidth: .infinity)
-                    }
-                    .glassButton(prominent: true)
-                }
-                .font(.system(size: 13, weight: .semibold))
-                .controlSize(.large)
-            }
-        }
-        .panelStyle(width: 360)
-    }
-}
-
 // MARK: - Hướng dẫn lần đầu
 
 struct OnboardingView: View {
@@ -1547,7 +1241,7 @@ struct OnboardingView: View {
                 if trusted {
                     Label(L("Đã cấp quyền", "Permission granted"), systemImage: "checkmark.circle.fill")
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Color(red: 0.55, green: 1.0, blue: 0.7))
+                        .foregroundStyle(.green)
                 } else {
                     Text(L("Bấm nút dưới → bật công tắc cạnh RinDock trong danh sách.",
                            "Click below → turn on the switch next to RinDock."))
@@ -1626,7 +1320,7 @@ struct OnboardingView: View {
         HStack(spacing: 8) {
             Image(systemName: done ? "checkmark.circle.fill" : "\(n).circle.fill")
                 .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(done ? Color(red: 0.55, green: 1.0, blue: 0.7) : Color.white)
+                .foregroundStyle(done ? Color.green : Color.accentColor)
             Text(title)
                 .font(.system(size: 14, weight: .semibold))
         }
@@ -1992,7 +1686,7 @@ struct UpdateView: View {
             case let .updated(from):
                 Image(systemName: "checkmark.seal.fill")
                     .font(.system(size: 26, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.green)
                 title(L("Đã cập nhật lên RinDock \(AppInfo.version)", "Updated to RinDock \(AppInfo.version)"))
                 Text(L("Từ bản \(from)", "From version \(from)"))
                     .font(.system(size: 12))
@@ -2142,7 +1836,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let supportPanel = Panel { AnyView(SupportView()) }
     private let aboutPanel = Panel { AnyView(AboutView()) }
     private let bugPanel = Panel { AnyView(BugReportView()) }
-    private let appearancePanel = Panel { AnyView(AppearanceView()) }
     private let rulesPanel = Panel { AnyView(AppRulesView()) }
     private lazy var onboardingPanel: Panel = {
         Panel { [weak self] in
@@ -2212,10 +1905,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let raw = sender.representedObject as? String, let a = MiddleClickAction(rawValue: raw) {
             Prefs.middleClick = a
         }
-    }
-
-    @objc private func openAppearance() {
-        appearancePanel.show()
     }
 
     @objc private func periodicUpdateCheck(_ timer: Timer) {
@@ -2318,7 +2007,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         langItem.submenu = langMenu
         menu.addItem(langItem)
-        menu.addItem(item(L("Giao diện kính…", "Glass Appearance…"), #selector(openAppearance)))
         menu.addItem(.separator())
 
         menu.addItem(item(L("Giới thiệu RinDock", "About RinDock"), #selector(openAbout)))
@@ -2418,7 +2106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard let raw = sender.representedObject as? String, let lang = AppLanguage(rawValue: raw) else { return }
         Prefs.language = lang
         // Cửa sổ nào đang mở thì vẽ lại ngay bằng ngôn ngữ mới.
-        for panel in [supportPanel, aboutPanel, bugPanel, updatePanel, appearancePanel, onboardingPanel, rulesPanel] {
+        for panel in [supportPanel, aboutPanel, bugPanel, updatePanel, onboardingPanel, rulesPanel] {
             panel.reloadIfVisible()
         }
         updateIcon()

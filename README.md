@@ -119,12 +119,6 @@ Lưu ý:
 - Mọi bản cập nhật đều được ký số. RinDock kiểm tra chữ ký trước khi cài, sai chữ ký là không cài.
 - Bản cập nhật giữ nguyên quyền của RinDock, bạn không phải cấp lại.
 
-## Giao diện kính
-
-Icon RinDock → **Giao diện kính…**:
-- **Kiểu kính:** Theo hệ thống (theo cài đặt Liquid Glass của macOS) · Trong · Mờ. Cần macOS 26.1 trở lên.
-- **Độ đậm của nền:** kéo về Trong để nhìn xuyên ra màn hình phía sau, kéo về Đậm cho dễ đọc.
-
 ## Ngôn ngữ
 
 RinDock có tiếng Việt và tiếng Anh. Đổi ở: icon RinDock trên thanh menu → **Ngôn ngữ · Language** → **Tiếng Việt**, **English** hoặc **Theo ngôn ngữ của máy**.
