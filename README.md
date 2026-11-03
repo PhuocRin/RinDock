@@ -109,8 +109,10 @@ RinDock tự cập nhật được, không cần tải lại từ GitHub. Bạn 
 
 **Khi có bản mới:**
 - **Tự cập nhật**: RinDock tự tải, kiểm tra chữ ký, cài và mở lại.
-- **Hỏi trước khi cập nhật** (mặc định): hiện cửa sổ hỏi, bấm **Cập nhật ngay** là xong.
-- **Chỉ báo cho tôi**: icon trên thanh menu thêm dấu chấm, bạn cập nhật khi muốn.
+- **Hỏi trước khi cập nhật** (mặc định): RinDock gửi thông báo của macOS, bấm vào thông báo để xem có gì mới rồi bấm **Cập nhật ngay** là xong.
+- **Chỉ báo cho tôi**: RinDock gửi thông báo và icon trên thanh menu thêm dấu chấm, bạn cập nhật khi muốn.
+
+Lần đầu có bản mới, macOS sẽ hỏi bạn có cho RinDock gửi thông báo không. Không cho cũng được: chế độ Hỏi trước sẽ mở cửa sổ cập nhật thay cho thông báo. Mỗi bản mới chỉ báo một lần.
 
 Muốn kiểm tra ngay: bấm icon RinDock → **Kiểm tra cập nhật…**.
 
@@ -129,6 +131,7 @@ RinDock có tiếng Việt và tiếng Anh. Đổi ở: icon RinDock trên thanh
 - Quyền điều khiển (mục Trợ năng, hoặc Điều khiển thiết bị và truy cập dữ liệu trên macOS 27) chỉ dùng để đọc icon Dock dưới con trỏ và thu nhỏ / hiện cửa sổ.
 - Kết nối mạng duy nhất: hỏi GitHub có bản mới không (mỗi ngày, mỗi tuần, hoặc tắt), và tải bản mới khi cập nhật. Không gửi thông tin gì của bạn.
 - Bản cập nhật được ký số; RinDock chỉ cài khi chữ ký đúng là của tác giả.
+- Thông báo chỉ dùng để báo có bản mới, bạn tắt được ở Cài đặt hệ thống → Thông báo → RinDock.
 - Khi bạn bấm **Báo lỗi**, app chỉ mở email hoặc GitHub có điền sẵn phiên bản app, macOS, loại chip và nhật ký 30 lần bấm Dock gần nhất (tên app được bấm, chỉ lưu trong bộ nhớ, thoát app là mất). Bạn xem được hết trước khi gửi, không gửi thì không có gì đi đâu cả.
 - Toàn bộ mã nguồn nằm trong một file: [`Sources/main.swift`](Sources/main.swift). Bạn có thể đọc trước khi cài.
 
