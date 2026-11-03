@@ -193,6 +193,8 @@ cd RinDock
 
 ## Tác giả
 
-Làm bởi **Phước Rin**: [YouTube](https://youtube.com/@phuocrin) · [TikTok](https://www.tiktok.com/@phuocrinrin) · [beacons.ai/phuocrin](https://beacons.ai/phuocrin)
+Làm bởi **Phước Rin**: [YouTube](https://youtube.com/@phuocrin) · [TikTok](https://www.tiktok.com/@phuocrinrin) · [Facebook](https://www.facebook.com/phuocrinrin) · [phuocrin.com](https://phuocrin.com)
+
+Trang RinDock (hướng dẫn cài có hình): [phuocrin.com/rindock](https://phuocrin.com/rindock/)
 
 Giấy phép [MIT](LICENSE).
