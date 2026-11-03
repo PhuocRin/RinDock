@@ -676,15 +676,26 @@ struct PanelBackdrop: View {
                                     Color(red: 0.69, green: 0.36, blue: 1.0)],
                            startPoint: .topLeading, endPoint: .bottomTrailing)
             Circle()
-                .fill(Color(red: 0.45, green: 0.90, blue: 0.95).opacity(0.55))
+                .fill(Color(red: 0.45, green: 0.90, blue: 0.95).opacity(0.65))
                 .frame(width: 260, height: 260)
                 .blur(radius: 70)
                 .offset(x: 140, y: 260)
             Circle()
-                .fill(Color(red: 1.0, green: 0.55, blue: 0.80).opacity(0.45))
+                .fill(Color(red: 1.0, green: 0.55, blue: 0.80).opacity(0.55))
                 .frame(width: 240, height: 240)
                 .blur(radius: 70)
                 .offset(x: -150, y: -200)
+            // Thêm vài mảng màu ở giữa để khối kính có chi tiết mà khúc xạ.
+            Circle()
+                .fill(Color(red: 0.35, green: 0.85, blue: 1.0).opacity(0.45))
+                .frame(width: 200, height: 200)
+                .blur(radius: 55)
+                .offset(x: 120, y: -40)
+            Circle()
+                .fill(Color(red: 1.0, green: 0.75, blue: 0.45).opacity(0.30))
+                .frame(width: 180, height: 180)
+                .blur(radius: 60)
+                .offset(x: -130, y: 120)
         }
         .ignoresSafeArea()
     }
@@ -702,67 +713,113 @@ struct BehindWindowBlur: NSViewRepresentable {
     func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
 }
 
-/// Độ đậm màu của nền cửa sổ (0 = kính trong, 1 = đậm), chỉnh trong Giao diện kính.
-enum Tint {
-    static let key = "tintAmount"
-    static let defaultValue = 0.45
-    /// Màu tím cùng tông icon app.
-    static let color = NSColor(red: 0.45, green: 0.36, blue: 1.0, alpha: 1)
+/// Độ đậm của lớp màu nền (thấp = nhìn xuyên ra màn hình phía sau nhiều hơn), chỉnh trong Giao diện kính.
+enum Backdrop {
+    static let key = "backdropStrength"
+    static let defaultValue = 0.9
+    static let range = 0.4...1.0
 }
 
-#if compiler(>=6.2)
-/// Nền cửa sổ bằng Liquid Glass thật (NSGlassEffectView, macOS 26): khúc xạ màn hình phía sau cửa sổ.
-@available(macOS 26.0, *)
-struct WindowGlass: NSViewRepresentable {
-    var look: GlassLook
-    var tint: Double
-
-    func makeNSView(context: Context) -> NSGlassEffectView {
-        let v = NSGlassEffectView()
-        v.contentView = NSView()
-        apply(v)
-        return v
-    }
-
-    func updateNSView(_ v: NSGlassEffectView, context: Context) { apply(v) }
-
-    private func apply(_ v: NSGlassEffectView) {
-        v.cornerRadius = 16
-        v.style = look == .clear ? .clear : .regular
-        // Kiểu "Mờ" phủ thêm một lớp màu để chữ dễ đọc hơn.
-        let alpha = min(0.85, tint * 0.7 + (look == .tinted ? 0.15 : 0))
-        v.tintColor = alpha < 0.02 ? nil : Tint.color.withAlphaComponent(alpha)
-    }
-}
-#endif
-
-/// Nền cửa sổ: macOS 26 dùng Liquid Glass thật; bản cũ hơn (hoặc khi bật Giảm độ trong suốt)
-/// dùng màn hình phía sau làm mờ + lớp gradient.
+/// Nền cửa sổ: màn hình phía sau làm mờ + lớp màu xanh tím cùng tông icon.
+/// Lớp màu luôn có sẵn trong cửa sổ nên các khối kính phía trên lúc nào cũng có màu để khúc xạ,
+/// kể cả khi phía sau cửa sổ là một app nền trắng.
 struct PanelBackground: View {
-    @AppStorage(Tint.key) private var tint: Double = Tint.defaultValue
-    @AppStorage("glassLook") private var look: GlassLook = .system
+    @AppStorage(Backdrop.key) private var strength: Double = Backdrop.defaultValue
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
-    @ViewBuilder
     var body: some View {
-        #if compiler(>=6.2)
-        if #available(macOS 26.0, *), !reduceTransparency {
-            WindowGlass(look: look, tint: tint).ignoresSafeArea()
-        } else {
-            legacy
-        }
-        #else
-        legacy
-        #endif
-    }
-
-    private var legacy: some View {
         ZStack {
             BehindWindowBlur()
             PanelBackdrop()
-                .opacity(reduceTransparency ? 1 : 0.3 + 0.7 * tint)
+                .opacity(reduceTransparency ? 1 : strength)
         }
         .ignoresSafeArea()
+    }
+}
+
+/// Đang nằm trong một khối kính: nút bên trong không dùng kính nữa (kính không đặt chồng lên kính).
+private struct InsideGlassCardKey: EnvironmentKey { static let defaultValue = false }
+extension EnvironmentValues {
+    var insideGlassCard: Bool {
+        get { self[InsideGlassCardKey.self] }
+        set { self[InsideGlassCardKey.self] = newValue }
+    }
+}
+
+/// Khối nội dung: Liquid Glass thật trên macOS 26 (khúc xạ lớp màu nền), khối mờ trong suốt ở bản cũ hơn.
+struct GlassCard: ViewModifier {
+    var cornerRadius: CGFloat
+    @AppStorage("glassLook") private var look: GlassLook = .system
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        #if compiler(>=6.2)
+        if #available(macOS 26.0, *) {
+            content
+                .environment(\.insideGlassCard, true)
+                .glassEffect(glass, in: .rect(cornerRadius: cornerRadius))
+        } else {
+            soft(content)
+        }
+        #else
+        soft(content)
+        #endif
+    }
+
+    #if compiler(>=6.2)
+    @available(macOS 26.0, *)
+    private var glass: Glass {
+        switch look {
+        case .system: return .regular
+        case .clear:  return .clear
+        case .tinted: return .regular.tint(Color(red: 0.16, green: 0.12, blue: 0.48).opacity(0.35))
+        }
+    }
+    #endif
+
+    private func soft(_ content: Content) -> some View {
+        content
+            .environment(\.insideGlassCard, true)
+            .background {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(Color.white.opacity(0.14))
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.28), lineWidth: 1)
+            }
+    }
+}
+
+/// Nút trong khối kính: viên thuốc mờ trắng (nút chính màu chàm đậm), không phải kính.
+struct PillButtonStyle: ButtonStyle {
+    var prominent: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        Pill(configuration: configuration, prominent: prominent)
+    }
+
+    private struct Pill: View {
+        let configuration: ButtonStyleConfiguration
+        let prominent: Bool
+        @Environment(\.isEnabled) private var isEnabled
+        @Environment(\.controlSize) private var controlSize
+
+        var body: some View {
+            let pressed = configuration.isPressed
+            configuration.label
+                .foregroundStyle(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, controlSize == .large ? 8 : 5)
+                .background {
+                    Capsule().fill(prominent
+                                   ? Color(red: 0.16, green: 0.12, blue: 0.48).opacity(pressed ? 0.8 : 1)
+                                   : Color.white.opacity(pressed ? 0.30 : 0.16))
+                }
+                .overlay { Capsule().strokeBorder(Color.white.opacity(prominent ? 0.18 : 0.30), lineWidth: 1) }
+                .contentShape(Capsule())
+                .opacity(isEnabled ? 1 : 0.45)
+        }
     }
 }
 
@@ -778,17 +835,9 @@ extension View {
             .environment(\.colorScheme, .dark)
     }
 
-    /// Khối nội dung mờ trong suốt (không phải kính, để nút kính đặt bên trong không bị kính chồng kính).
+    /// Khối nội dung bằng kính (macOS 26) hoặc khối mờ (bản cũ hơn).
     func softCard(cornerRadius: CGFloat = 18) -> some View {
-        self
-            .background {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(Color.white.opacity(0.14))
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.28), lineWidth: 1)
-            }
+        modifier(GlassCard(cornerRadius: cornerRadius))
     }
 
     /// Nút Liquid Glass thật trên macOS 26, nút thường ở bản thấp hơn.
@@ -808,12 +857,15 @@ extension View {
 struct GlassButton: ViewModifier {
     let prominent: Bool
     @AppStorage("glassLook") private var look: GlassLook = .system
+    @Environment(\.insideGlassCard) private var insideGlassCard
     private let deep = Color(red: 0.16, green: 0.12, blue: 0.48)
 
     @ViewBuilder
     func body(content: Content) -> some View {
         #if compiler(>=6.2)
-        if #available(macOS 26.0, *) {
+        if #available(macOS 26.0, *), insideGlassCard {
+            content.buttonStyle(PillButtonStyle(prominent: prominent))
+        } else if #available(macOS 26.0, *) {
             if prominent {
                 content.buttonStyle(.glassProminent).tint(deep)
             } else {
@@ -1361,7 +1413,7 @@ struct AppRulesView: View {
 
 struct AppearanceView: View {
     @AppStorage("glassLook") private var look: GlassLook = .system
-    @AppStorage(Tint.key) private var opacity: Double = Tint.defaultValue
+    @AppStorage(Backdrop.key) private var opacity: Double = Backdrop.defaultValue
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     private var supportsGlassStyles: Bool {
@@ -1420,7 +1472,7 @@ struct AppearanceView: View {
                         .font(.system(size: 12, weight: .medium).monospacedDigit())
                         .foregroundStyle(.secondary)
                 }
-                Slider(value: $opacity, in: 0...1) {
+                Slider(value: $opacity, in: Backdrop.range) {
                     Text(L("Độ đậm của nền", "Background tint"))
                 } minimumValueLabel: {
                     Text(L("Trong", "Clear")).font(.system(size: 11))
@@ -1443,7 +1495,7 @@ struct AppearanceView: View {
                 HStack(spacing: 10) {
                     Button {
                         look = .system
-                        opacity = Tint.defaultValue
+                        opacity = Backdrop.defaultValue
                     } label: {
                         Text(L("Đặt lại", "Reset")).frame(maxWidth: .infinity)
                     }
