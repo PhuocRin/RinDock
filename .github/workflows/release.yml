@@ -13,17 +13,17 @@ on:
   workflow_dispatch:
     inputs:
       runner:
-        description: "Máy build (macos-latest = Mac chip M; macos-26-intel = Mac Intel, dùng khi máy chip M kẹt hàng)"
-        default: macos-latest
+        description: "Máy build (macos-26-intel = Mac Intel, mặc định vì ít kẹt hàng; macos-latest = Mac chip M). Cả hai đều ra app universal."
+        default: macos-26-intel
         type: choice
-        options: [macos-latest, macos-26-intel]
+        options: [macos-26-intel, macos-latest]
 
 permissions:
   contents: write
 
 jobs:
   build:
-    runs-on: ${{ inputs.runner || 'macos-latest' }}
+    runs-on: ${{ inputs.runner || 'macos-26-intel' }}
     steps:
       - uses: actions/checkout@v4
 
