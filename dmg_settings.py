@@ -25,7 +25,8 @@ show_toolbar = False
 show_pathbar = False
 show_sidebar = False
 
-window_rect = ((200, 120), (600, 400))
+# Cao hơn nền 400 để Finder có bật thanh đường dẫn / thanh trạng thái vẫn không che dòng nhắc phía dưới.
+window_rect = ((200, 100), (600, 500))
 default_view = "icon-view"
 
 icon_size = 112
