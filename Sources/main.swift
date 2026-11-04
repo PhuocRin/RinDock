@@ -753,6 +753,7 @@ struct AppIconView: View {
 @MainActor
 final class Panel {
     private var window: NSWindow?
+    private var resignObserver: NSObjectProtocol?
     private let content: () -> AnyView
 
     init(_ content: @escaping () -> AnyView) {
@@ -767,7 +768,10 @@ final class Panel {
         if window?.isVisible == true { show() }
     }
 
-    func show() {
+    /// attention = app tự mở (có bản mới, vừa cập nhật, hướng dẫn lần đầu): từ macOS 14, app trên thanh menu
+    /// không được tự giành quyền lên trước nên cửa sổ dễ bị kẹt sau app đang dùng. Lúc đó cho cửa sổ nổi
+    /// trên cùng ở đúng màn hình đang dùng, tới khi người dùng bấm vào rồi chuyển đi nơi khác.
+    func show(attention: Bool = false) {
         let controller = NSHostingController(rootView: content())
         controller.sizingOptions = .preferredContentSize   // cửa sổ tự co giãn theo nội dung
 
@@ -782,11 +786,19 @@ final class Panel {
             w.isReleasedWhenClosed = false
             w.standardWindowButton(.miniaturizeButton)?.isHidden = true
             w.standardWindowButton(.zoomButton)?.isHidden = true
+            w.collectionBehavior.insert(.moveToActiveSpace)
+            resignObserver = NotificationCenter.default.addObserver(
+                forName: NSWindow.didResignKeyNotification, object: w, queue: .main) { [weak w] _ in
+                MainActor.assumeIsolated { w?.level = .normal }
+            }
             window = w
         }
-        if let w = window, !w.isVisible { w.center() }
-        NSApp.activate(ignoringOtherApps: true)
-        window?.makeKeyAndOrderFront(nil)
+        guard let w = window else { return }
+        if !w.isVisible { w.center() }
+        w.level = attention ? .floating : .normal
+        if #available(macOS 14.0, *) { NSApp.activate() } else { NSApp.activate(ignoringOtherApps: true) }
+        w.makeKeyAndOrderFront(nil)
+        w.orderFrontRegardless()
     }
 }
 
@@ -1494,6 +1506,21 @@ final class Updater: ObservableObject {
         check(background: true)
     }
 
+    private var retryTask: Task<Void, Never>?
+    private var retryCount = 0
+
+    /// Hỏi lại sau 3 phút khi bản mới chưa có đủ gói cài (tối đa 6 lần, khỏi tốn lượt hỏi GitHub).
+    private func scheduleRetry() {
+        guard retryCount < 6 else { return }
+        retryCount += 1
+        retryTask?.cancel()
+        retryTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 180_000_000_000)
+            guard !Task.isCancelled else { return }
+            self?.check(background: true)
+        }
+    }
+
     func check(background: Bool = false) {
         if isBusy { return }
         // Kiểm tra nền không đổi trạng thái đang hiện (không mất bản mới đã tìm thấy, không quay vòng mãi).
@@ -1509,14 +1536,23 @@ final class Updater: ObservableObject {
             let (data, resp) = try await URLSession.shared.data(for: req)
             guard (resp as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.badServerResponse) }
             let rel = try JSONDecoder().decode(Release.self, from: data)
-            Prefs.lastUpdateCheck = Date()
             if Updater.isNewer(rel.version, than: AppInfo.version) {
-                if background, available?.version == rel.version { return }   // đã báo bản này rồi
+                // Vừa bấm phát hành thì GitHub đã coi là bản mới nhất nhưng gói cài phải ~5 phút sau mới gắn vào.
+                // Lúc đó kiểm tra nền chưa báo và hẹn hỏi lại, để không kẹt ở nút tải thủ công.
+                if !rel.canAutoInstall {
+                    scheduleRetry()
+                    if background { return }
+                } else {
+                    Prefs.lastUpdateCheck = Date()
+                }
+                // Đã báo bản này rồi (cùng số bản, cùng tình trạng gói cài) thì thôi.
+                if background, let a = available, a.version == rel.version, a.canAutoInstall == rel.canAutoInstall { return }
                 state = .available(rel)
                 onChange?()
                 if background { onFoundInBackground?(rel) }
                 return
             }
+            Prefs.lastUpdateCheck = Date()
             if !background { state = .upToDate }
         } catch {
             if !background { state = .failed }
@@ -1886,15 +1922,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                               userInfo: nil, repeats: true)
         }
         if !Prefs.onboarded || !AXIsProcessTrusted() {
-            onboardingPanel.show()
+            onboardingPanel.show(attention: true)
         }
 
         Prefs.migrate()
         updater.onChange = { [weak self] in self?.updateIcon() }
         updater.onFoundInBackground = { [weak self] rel in self?.handleFoundUpdate(rel) }
-        updater.onInstallFailed = { [weak self] in self?.updatePanel.show() }
+        updater.onInstallFailed = { [weak self] in self?.updatePanel.show(attention: true) }
         if updater.noteJustUpdated() {
-            updatePanel.show()
+            updatePanel.show(attention: true)
         }
         updater.checkIfDue()
         updateTimer = Timer.scheduledTimer(timeInterval: 6 * 3600, target: self,
@@ -1940,7 +1976,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .auto:
             if rel.canAutoInstall { updater.install(rel) }
         case .ask:
-            updatePanel.show()
+            updatePanel.show(attention: true)
         case .notify:
             break
         }
